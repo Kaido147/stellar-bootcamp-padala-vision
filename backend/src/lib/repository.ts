@@ -184,6 +184,22 @@ export interface RefundIntentRecord {
   createdAt: string;
 }
 
+export interface ReconciliationEventRecord {
+  id: string;
+  orderId: string;
+  actorUserId: string;
+  actorWallet: string | null;
+  actorRoles: string[];
+  backendStateBefore: OrderStatus;
+  chainState: "Draft" | "Funded" | "RiderAssigned" | "InTransit" | "Released" | "Refunded" | "Disputed";
+  backendStateAfter: OrderStatus;
+  driftDetected: boolean;
+  actionsTaken: string[];
+  correlationId: string;
+  forceRefresh: boolean;
+  createdAt: string;
+}
+
 export interface Repository {
   readonly mode: "memory" | "supabase";
   generateOrderId(): string;
@@ -260,6 +276,7 @@ export interface Repository {
   ): Promise<DisputeRecord>;
   createDisputeEvent(input: Omit<DisputeEventRecord, "id" | "createdAt">): Promise<DisputeEventRecord>;
   createRefundIntent(input: Omit<RefundIntentRecord, "createdAt">): Promise<RefundIntentRecord>;
+  createReconciliationEvent(input: Omit<ReconciliationEventRecord, "id" | "createdAt">): Promise<ReconciliationEventRecord>;
 }
 
 export class InMemoryRepository implements Repository {
@@ -278,6 +295,7 @@ export class InMemoryRepository implements Repository {
   private disputes = new Map<string, DisputeRecord>();
   private disputeEvents: DisputeEventRecord[] = [];
   private refundIntents = new Map<string, RefundIntentRecord>();
+  private reconciliationEvents: ReconciliationEventRecord[] = [];
   private nextOrderId = 1;
 
   generateOrderId(): string {
@@ -693,6 +711,19 @@ export class InMemoryRepository implements Repository {
     this.refundIntents.set(record.id, record);
     return record;
   }
+
+  async createReconciliationEvent(
+    input: Omit<ReconciliationEventRecord, "id" | "createdAt">,
+  ): Promise<ReconciliationEventRecord> {
+    const record: ReconciliationEventRecord = {
+      ...input,
+      id: uuid(),
+      createdAt: new Date().toISOString(),
+    };
+
+    this.reconciliationEvents.push(record);
+    return record;
+  }
 }
 
 type OrderRow = {
@@ -888,6 +919,22 @@ type RefundIntentRow = {
   eligibility_basis: RefundIntentRecord["eligibilityBasis"];
   eligible_at: string;
   correlation_id: string;
+  created_at: string;
+};
+
+type ReconciliationEventRow = {
+  id: string;
+  order_id: string;
+  actor_user_id: string;
+  actor_wallet: string | null;
+  actor_roles_json: string[] | string;
+  backend_state_before: OrderStatus;
+  chain_state: ReconciliationEventRecord["chainState"];
+  backend_state_after: OrderStatus;
+  drift_detected: boolean;
+  actions_taken_json: string[] | string;
+  correlation_id: string;
+  force_refresh: boolean;
   created_at: string;
 };
 
@@ -1683,6 +1730,34 @@ class SupabaseRepository implements Repository {
     return mapRefundIntentRow(data);
   }
 
+  async createReconciliationEvent(
+    input: Omit<ReconciliationEventRecord, "id" | "createdAt">,
+  ): Promise<ReconciliationEventRecord> {
+    const { data, error } = await this.client
+      .from("reconciliation_events")
+      .insert({
+        order_id: input.orderId,
+        actor_user_id: input.actorUserId,
+        actor_wallet: input.actorWallet,
+        actor_roles_json: input.actorRoles,
+        backend_state_before: input.backendStateBefore,
+        chain_state: input.chainState,
+        backend_state_after: input.backendStateAfter,
+        drift_detected: input.driftDetected,
+        actions_taken_json: input.actionsTaken,
+        correlation_id: input.correlationId,
+        force_refresh: input.forceRefresh,
+      })
+      .select("*")
+      .single<ReconciliationEventRow>();
+
+    if (error || !data) {
+      throw new Error(`Failed to create reconciliation event in Supabase: ${error?.message ?? "unknown error"}`);
+    }
+
+    return mapReconciliationEventRow(data);
+  }
+
   private async insertStatusHistory(row: Omit<StatusHistoryRow, "id">) {
     const { error } = await this.client.from("order_status_history").insert({
       id: uuid(),
@@ -1947,6 +2022,24 @@ function mapRefundIntentRow(row: RefundIntentRow): RefundIntentRecord {
     eligibilityBasis: row.eligibility_basis,
     eligibleAt: row.eligible_at,
     correlationId: row.correlation_id,
+    createdAt: row.created_at,
+  };
+}
+
+function mapReconciliationEventRow(row: ReconciliationEventRow): ReconciliationEventRecord {
+  return {
+    id: row.id,
+    orderId: row.order_id,
+    actorUserId: row.actor_user_id,
+    actorWallet: row.actor_wallet,
+    actorRoles: Array.isArray(row.actor_roles_json) ? row.actor_roles_json : [],
+    backendStateBefore: row.backend_state_before,
+    chainState: row.chain_state,
+    backendStateAfter: row.backend_state_after,
+    driftDetected: row.drift_detected,
+    actionsTaken: Array.isArray(row.actions_taken_json) ? row.actions_taken_json : [],
+    correlationId: row.correlation_id,
+    forceRefresh: row.force_refresh,
     createdAt: row.created_at,
   };
 }

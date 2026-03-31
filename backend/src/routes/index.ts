@@ -2,6 +2,7 @@ import { Router } from "express";
 import { authRouter } from "./auth.routes.js";
 import { disputesRouter } from "./disputes.routes.js";
 import { refundsRouter } from "./refunds.routes.js";
+import { reconcileRouter } from "./reconcile.routes.js";
 import { releaseRouter } from "./release.routes.js";
 import {
   acceptJob,
@@ -21,6 +22,7 @@ export const apiRouter = Router();
 apiRouter.use("/auth", authRouter);
 apiRouter.use("/disputes", disputesRouter);
 apiRouter.use("/refunds", refundsRouter);
+apiRouter.use("/reconcile", reconcileRouter);
 apiRouter.use("/release", releaseRouter);
 apiRouter.post("/orders", createOrder);
 apiRouter.get("/orders/:id", getOrder);
