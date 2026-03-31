@@ -25,7 +25,7 @@ body::before {
   position: fixed;
   inset: 0;
   pointer-events: none;
-  opacity: 0.32;
+  opacity: 0.18;
   background-image:
     linear-gradient(rgba(164, 189, 199, 0.08) 1px, transparent 1px),
     linear-gradient(90deg, rgba(164, 189, 199, 0.08) 1px, transparent 1px);
@@ -37,12 +37,12 @@ body::after {
   content: "";
   position: fixed;
   inset: auto 10% 5% auto;
-  width: 26rem;
-  height: 26rem;
+  width: 22rem;
+  height: 22rem;
   pointer-events: none;
   border-radius: 9999px;
-  background: radial-gradient(circle, rgba(184, 255, 100, 0.08) 0%, transparent 65%);
-  filter: blur(18px);
+  background: radial-gradient(circle, rgba(184, 255, 100, 0.05) 0%, transparent 68%);
+  filter: blur(22px);
 }
 
 body,
@@ -64,11 +64,11 @@ button {
 
 @layer components {
   .surface-panel {
-    @apply rounded-[2rem] border border-line bg-white/[0.035] shadow-card backdrop-blur;
+    @apply rounded-[2rem] border border-line bg-white/[0.03] shadow-card backdrop-blur;
   }
 
   .surface-card {
-    @apply rounded-[1.75rem] border border-line bg-sand/85;
+    @apply rounded-[1.75rem] border border-line bg-sand/80;
   }
 
   .btn-primary {
@@ -85,5 +85,17 @@ button {
 
   .section-kicker {
     @apply text-[11px] font-semibold uppercase tracking-[0.3em] text-coral/90;
+  }
+
+  .landing-divider {
+    @apply mx-auto h-px w-full max-w-4xl bg-gradient-to-r from-transparent via-white/10 to-transparent;
+  }
+
+  .quiet-pill {
+    @apply rounded-full border border-line bg-white/[0.02] px-3 py-1.5 text-xs font-medium text-ink/60;
+  }
+
+  .landing-track {
+    @apply relative rounded-[1.75rem] border border-line bg-night/90;
   }
 }
