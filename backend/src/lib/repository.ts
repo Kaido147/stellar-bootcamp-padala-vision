@@ -32,6 +32,54 @@ export interface OracleDecisionRecord {
   createdAt: string;
 }
 
+export interface IdempotencyRecord {
+  scopeKey: string;
+  method: string;
+  path: string;
+  idempotencyKey: string;
+  requestHash: string;
+  correlationId: string;
+  state: "in_progress" | "completed";
+  responseStatus: number | null;
+  responseBody: unknown | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ClaimIdempotencyRecordInput {
+  scopeKey: string;
+  method: string;
+  path: string;
+  idempotencyKey: string;
+  requestHash: string;
+  correlationId: string;
+}
+
+export interface WalletChallengeRecord {
+  id: string;
+  userId: string;
+  walletAddress: string;
+  walletProvider: string;
+  nonceHash: string;
+  message: string;
+  issuedAt: string;
+  expiresAt: string;
+  consumedAt: string | null;
+  createdAt: string;
+}
+
+export interface WalletBindingRecord {
+  id: string;
+  userId: string;
+  walletAddress: string;
+  walletProvider: string;
+  challengeId: string;
+  verifiedAt: string;
+  revokedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Repository {
   readonly mode: "memory" | "supabase";
   generateOrderId(): string;
@@ -50,6 +98,28 @@ export interface Repository {
   getLatestDecision(orderId: string): Promise<OracleDecisionRecord | null>;
   getTransactions(orderId: string): Promise<TransactionRecord[]>;
   getHistory(orderId: string): Promise<OrderStatusHistoryEntry[]>;
+  claimIdempotencyRecord(input: ClaimIdempotencyRecordInput): Promise<IdempotencyRecord>;
+  completeIdempotencyRecord(
+    scopeKey: string,
+    result: {
+      responseStatus: number;
+      responseBody: unknown;
+    },
+  ): Promise<void>;
+  deleteIdempotencyRecord(scopeKey: string): Promise<void>;
+  createWalletChallenge(
+    input: Omit<WalletChallengeRecord, "consumedAt" | "createdAt">,
+  ): Promise<WalletChallengeRecord>;
+  getWalletChallenge(id: string): Promise<WalletChallengeRecord | null>;
+  consumeWalletChallenge(id: string, consumedAt: string): Promise<void>;
+  getActiveWalletBindingByWallet(walletAddress: string): Promise<WalletBindingRecord | null>;
+  upsertWalletBinding(input: {
+    userId: string;
+    walletAddress: string;
+    walletProvider: string;
+    challengeId: string;
+    verifiedAt: string;
+  }): Promise<WalletBindingRecord>;
 }
 
 export class InMemoryRepository implements Repository {
@@ -59,6 +129,9 @@ export class InMemoryRepository implements Repository {
   private decisions: OracleDecisionRecord[] = [];
   private transactions: TransactionRecord[] = [];
   private history: OrderStatusHistoryEntry[] = [];
+  private idempotency = new Map<string, IdempotencyRecord>();
+  private walletChallenges = new Map<string, WalletChallengeRecord>();
+  private walletBindings = new Map<string, WalletBindingRecord>();
   private nextOrderId = 1;
 
   generateOrderId(): string {
@@ -169,6 +242,128 @@ export class InMemoryRepository implements Repository {
   async getHistory(orderId: string): Promise<OrderStatusHistoryEntry[]> {
     return this.history.filter((entry) => entry.orderId === orderId);
   }
+
+  async claimIdempotencyRecord(input: ClaimIdempotencyRecordInput): Promise<IdempotencyRecord> {
+    const existing = this.idempotency.get(input.scopeKey);
+    if (existing) {
+      return existing;
+    }
+
+    const now = new Date().toISOString();
+    const record: IdempotencyRecord = {
+      ...input,
+      state: "in_progress",
+      responseStatus: null,
+      responseBody: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    this.idempotency.set(input.scopeKey, record);
+    return record;
+  }
+
+  async completeIdempotencyRecord(
+    scopeKey: string,
+    result: {
+      responseStatus: number;
+      responseBody: unknown;
+    },
+  ): Promise<void> {
+    const existing = this.idempotency.get(scopeKey);
+    if (!existing) {
+      return;
+    }
+
+    this.idempotency.set(scopeKey, {
+      ...existing,
+      state: "completed",
+      responseStatus: result.responseStatus,
+      responseBody: result.responseBody,
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
+  async deleteIdempotencyRecord(scopeKey: string): Promise<void> {
+    this.idempotency.delete(scopeKey);
+  }
+
+  async createWalletChallenge(
+    input: Omit<WalletChallengeRecord, "consumedAt" | "createdAt">,
+  ): Promise<WalletChallengeRecord> {
+    const record: WalletChallengeRecord = {
+      ...input,
+      consumedAt: null,
+      createdAt: new Date().toISOString(),
+    };
+
+    this.walletChallenges.set(record.id, record);
+    return record;
+  }
+
+  async getWalletChallenge(id: string): Promise<WalletChallengeRecord | null> {
+    return this.walletChallenges.get(id) ?? null;
+  }
+
+  async consumeWalletChallenge(id: string, consumedAt: string): Promise<void> {
+    const existing = this.walletChallenges.get(id);
+    if (!existing) {
+      return;
+    }
+
+    this.walletChallenges.set(id, {
+      ...existing,
+      consumedAt,
+    });
+  }
+
+  async getActiveWalletBindingByWallet(walletAddress: string): Promise<WalletBindingRecord | null> {
+    return (
+      [...this.walletBindings.values()].find(
+        (binding) => binding.walletAddress === walletAddress && binding.revokedAt === null,
+      ) ?? null
+    );
+  }
+
+  async upsertWalletBinding(input: {
+    userId: string;
+    walletAddress: string;
+    walletProvider: string;
+    challengeId: string;
+    verifiedAt: string;
+  }): Promise<WalletBindingRecord> {
+    const existing = [...this.walletBindings.values()].find(
+      (binding) => binding.userId === input.userId && binding.walletAddress === input.walletAddress,
+    );
+
+    if (existing) {
+      const updated: WalletBindingRecord = {
+        ...existing,
+        walletProvider: input.walletProvider,
+        challengeId: input.challengeId,
+        verifiedAt: input.verifiedAt,
+        revokedAt: null,
+        updatedAt: input.verifiedAt,
+      };
+      this.walletBindings.set(existing.id, updated);
+      return updated;
+    }
+
+    const record: WalletBindingRecord = {
+      id: uuid(),
+      userId: input.userId,
+      walletAddress: input.walletAddress,
+      walletProvider: input.walletProvider,
+      challengeId: input.challengeId,
+      verifiedAt: input.verifiedAt,
+      revokedAt: null,
+      createdAt: input.verifiedAt,
+      updatedAt: input.verifiedAt,
+    };
+
+    this.walletBindings.set(record.id, record);
+    return record;
+  }
 }
 
 type OrderRow = {
@@ -227,6 +422,45 @@ type StatusHistoryRow = {
   new_status: OrderStatus;
   changed_at: string;
   note: string | null;
+};
+
+type IdempotencyRow = {
+  scope_key: string;
+  method: string;
+  path: string;
+  idempotency_key: string;
+  request_hash: string;
+  correlation_id: string;
+  state: "in_progress" | "completed";
+  response_status: number | null;
+  response_body: unknown | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type WalletChallengeRow = {
+  id: string;
+  user_id: string;
+  wallet_address: string;
+  wallet_provider: string;
+  nonce_hash: string;
+  message: string;
+  issued_at: string;
+  expires_at: string;
+  consumed_at: string | null;
+  created_at: string;
+};
+
+type WalletBindingRow = {
+  id: string;
+  user_id: string;
+  wallet_address: string;
+  wallet_provider: string;
+  challenge_id: string;
+  verified_at: string;
+  revoked_at: string | null;
+  created_at: string;
+  updated_at: string;
 };
 
 class SupabaseRepository implements Repository {
@@ -468,6 +702,189 @@ class SupabaseRepository implements Repository {
     return (data ?? []).map(mapStatusHistoryRow);
   }
 
+  async claimIdempotencyRecord(input: ClaimIdempotencyRecordInput): Promise<IdempotencyRecord> {
+    const record = {
+      scope_key: input.scopeKey,
+      method: input.method,
+      path: input.path,
+      idempotency_key: input.idempotencyKey,
+      request_hash: input.requestHash,
+      correlation_id: input.correlationId,
+      state: "in_progress" as const,
+      response_status: null,
+      response_body: null,
+    };
+
+    const { data, error } = await this.client
+      .from("idempotency_keys")
+      .insert(record)
+      .select("*")
+      .maybeSingle<IdempotencyRow>();
+
+    if (data) {
+      return mapIdempotencyRow(data);
+    }
+
+    if (error && error.code !== "23505") {
+      throw new Error(`Failed to create idempotency record in Supabase: ${error.message}`);
+    }
+
+    const existing = await this.getIdempotencyRecord(input.scopeKey);
+    if (!existing) {
+      throw new Error("Failed to fetch existing idempotency record after insert conflict");
+    }
+
+    return existing;
+  }
+
+  async completeIdempotencyRecord(
+    scopeKey: string,
+    result: {
+      responseStatus: number;
+      responseBody: unknown;
+    },
+  ): Promise<void> {
+    const { error } = await this.client
+      .from("idempotency_keys")
+      .update({
+        state: "completed",
+        response_status: result.responseStatus,
+        response_body: result.responseBody,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("scope_key", scopeKey);
+
+    if (error) {
+      throw new Error(`Failed to complete idempotency record in Supabase: ${error.message}`);
+    }
+  }
+
+  async deleteIdempotencyRecord(scopeKey: string): Promise<void> {
+    const { error } = await this.client.from("idempotency_keys").delete().eq("scope_key", scopeKey);
+
+    if (error) {
+      throw new Error(`Failed to delete idempotency record in Supabase: ${error.message}`);
+    }
+  }
+
+  async createWalletChallenge(
+    input: Omit<WalletChallengeRecord, "consumedAt" | "createdAt">,
+  ): Promise<WalletChallengeRecord> {
+    const { data, error } = await this.client
+      .from("wallet_challenges")
+      .insert({
+        id: input.id,
+        user_id: input.userId,
+        wallet_address: input.walletAddress,
+        wallet_provider: input.walletProvider,
+        nonce_hash: input.nonceHash,
+        message: input.message,
+        issued_at: input.issuedAt,
+        expires_at: input.expiresAt,
+      })
+      .select("*")
+      .single<WalletChallengeRow>();
+
+    if (error || !data) {
+      throw new Error(`Failed to create wallet challenge in Supabase: ${error?.message ?? "unknown error"}`);
+    }
+
+    return mapWalletChallengeRow(data);
+  }
+
+  async getWalletChallenge(id: string): Promise<WalletChallengeRecord | null> {
+    const { data, error } = await this.client
+      .from("wallet_challenges")
+      .select("*")
+      .eq("id", id)
+      .maybeSingle<WalletChallengeRow>();
+
+    if (error) {
+      throw new Error(`Failed to fetch wallet challenge from Supabase: ${error.message}`);
+    }
+
+    return data ? mapWalletChallengeRow(data) : null;
+  }
+
+  async consumeWalletChallenge(id: string, consumedAt: string): Promise<void> {
+    const { error } = await this.client
+      .from("wallet_challenges")
+      .update({
+        consumed_at: consumedAt,
+      })
+      .eq("id", id)
+      .is("consumed_at", null);
+
+    if (error) {
+      throw new Error(`Failed to consume wallet challenge in Supabase: ${error.message}`);
+    }
+  }
+
+  async getActiveWalletBindingByWallet(walletAddress: string): Promise<WalletBindingRecord | null> {
+    const { data, error } = await this.client
+      .from("wallet_bindings")
+      .select("*")
+      .eq("wallet_address", walletAddress)
+      .is("revoked_at", null)
+      .maybeSingle<WalletBindingRow>();
+
+    if (error) {
+      throw new Error(`Failed to fetch active wallet binding from Supabase: ${error.message}`);
+    }
+
+    return data ? mapWalletBindingRow(data) : null;
+  }
+
+  async upsertWalletBinding(input: {
+    userId: string;
+    walletAddress: string;
+    walletProvider: string;
+    challengeId: string;
+    verifiedAt: string;
+  }): Promise<WalletBindingRecord> {
+    const existing = await this.getWalletBindingForUserAndWallet(input.userId, input.walletAddress);
+
+    if (existing) {
+      const { data, error } = await this.client
+        .from("wallet_bindings")
+        .update({
+          wallet_provider: input.walletProvider,
+          challenge_id: input.challengeId,
+          verified_at: input.verifiedAt,
+          revoked_at: null,
+          updated_at: input.verifiedAt,
+        })
+        .eq("id", existing.id)
+        .select("*")
+        .single<WalletBindingRow>();
+
+      if (error || !data) {
+        throw new Error(`Failed to update wallet binding in Supabase: ${error?.message ?? "unknown error"}`);
+      }
+
+      return mapWalletBindingRow(data);
+    }
+
+    const { data, error } = await this.client
+      .from("wallet_bindings")
+      .insert({
+        id: uuid(),
+        user_id: input.userId,
+        wallet_address: input.walletAddress,
+        wallet_provider: input.walletProvider,
+        challenge_id: input.challengeId,
+        verified_at: input.verifiedAt,
+      })
+      .select("*")
+      .single<WalletBindingRow>();
+
+    if (error || !data) {
+      throw new Error(`Failed to create wallet binding in Supabase: ${error?.message ?? "unknown error"}`);
+    }
+
+    return mapWalletBindingRow(data);
+  }
+
   private async insertStatusHistory(row: Omit<StatusHistoryRow, "id">) {
     const { error } = await this.client.from("order_status_history").insert({
       id: uuid(),
@@ -477,6 +894,38 @@ class SupabaseRepository implements Repository {
     if (error) {
       throw new Error(`Failed to write order history in Supabase: ${error.message}`);
     }
+  }
+
+  private async getIdempotencyRecord(scopeKey: string): Promise<IdempotencyRecord | null> {
+    const { data, error } = await this.client
+      .from("idempotency_keys")
+      .select("*")
+      .eq("scope_key", scopeKey)
+      .maybeSingle<IdempotencyRow>();
+
+    if (error) {
+      throw new Error(`Failed to fetch idempotency record from Supabase: ${error.message}`);
+    }
+
+    return data ? mapIdempotencyRow(data) : null;
+  }
+
+  private async getWalletBindingForUserAndWallet(
+    userId: string,
+    walletAddress: string,
+  ): Promise<WalletBindingRecord | null> {
+    const { data, error } = await this.client
+      .from("wallet_bindings")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("wallet_address", walletAddress)
+      .maybeSingle<WalletBindingRow>();
+
+    if (error) {
+      throw new Error(`Failed to fetch wallet binding from Supabase: ${error.message}`);
+    }
+
+    return data ? mapWalletBindingRow(data) : null;
   }
 }
 
@@ -545,6 +994,51 @@ function mapStatusHistoryRow(row: StatusHistoryRow): OrderStatusHistoryEntry {
     newStatus: row.new_status,
     changedAt: row.changed_at,
     note: row.note,
+  };
+}
+
+function mapIdempotencyRow(row: IdempotencyRow): IdempotencyRecord {
+  return {
+    scopeKey: row.scope_key,
+    method: row.method,
+    path: row.path,
+    idempotencyKey: row.idempotency_key,
+    requestHash: row.request_hash,
+    correlationId: row.correlation_id,
+    state: row.state,
+    responseStatus: row.response_status,
+    responseBody: row.response_body,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapWalletChallengeRow(row: WalletChallengeRow): WalletChallengeRecord {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    walletAddress: row.wallet_address,
+    walletProvider: row.wallet_provider,
+    nonceHash: row.nonce_hash,
+    message: row.message,
+    issuedAt: row.issued_at,
+    expiresAt: row.expires_at,
+    consumedAt: row.consumed_at,
+    createdAt: row.created_at,
+  };
+}
+
+function mapWalletBindingRow(row: WalletBindingRow): WalletBindingRecord {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    walletAddress: row.wallet_address,
+    walletProvider: row.wallet_provider,
+    challengeId: row.challenge_id,
+    verifiedAt: row.verified_at,
+    revokedAt: row.revoked_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
   };
 }
 

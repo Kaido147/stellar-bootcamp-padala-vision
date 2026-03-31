@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { authRouter } from "./auth.routes.js";
 import {
   acceptJob,
   createOrder,
@@ -15,6 +16,7 @@ import {
 
 export const apiRouter = Router();
 
+apiRouter.use("/auth", authRouter);
 apiRouter.post("/orders", createOrder);
 apiRouter.get("/orders/:id", getOrder);
 apiRouter.get("/orders/:id/history", getOrderHistory);
