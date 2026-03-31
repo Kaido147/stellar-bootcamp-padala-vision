@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { HttpError } from "../lib/errors.js";
 import { repository } from "../lib/repository.js";
 import type { SessionActor } from "../middleware/auth.js";
+import { assertHasOperatorRole, getBoundWalletOrThrow, isOperator } from "./authorization.service.js";
 import { ReleaseService } from "./release.service.js";
 
 export class DisputeService {
@@ -28,14 +29,13 @@ export class DisputeService {
       throw new HttpError(409, "An open dispute already exists for this order", "dispute_already_open");
     }
 
-    const actorWalletBinding = await repository.getActiveWalletBindingByUser(input.actor.userId);
-    const actorWallet = actorWalletBinding?.walletAddress ?? null;
-    const isOperator = input.actor.roles.includes("ops_reviewer") || input.actor.roles.includes("ops_admin");
+    const operator = isOperator(input.actor);
+    const actorWallet = await getBoundWalletOrThrow(input.actor);
     const isParticipant =
       actorWallet !== null &&
       [order.buyerWallet, order.sellerWallet, order.riderWallet].filter(Boolean).includes(actorWallet);
 
-    if (!isOperator && !isParticipant) {
+    if (!operator && !isParticipant) {
       throw new HttpError(403, "Only an order participant or authorized operator can open a dispute", "dispute_forbidden");
     }
 
@@ -103,9 +103,11 @@ export class DisputeService {
     submittedWallet?: string;
     correlationId: string;
   }) {
-    if (!input.actor.roles.includes("ops_reviewer") && !input.actor.roles.includes("ops_admin")) {
-      throw new HttpError(403, "Only ops_reviewer or ops_admin can resolve disputes", "dispute_resolution_forbidden");
-    }
+    assertHasOperatorRole(
+      input.actor,
+      "dispute_resolution_forbidden",
+      "Only ops_reviewer or ops_admin can resolve disputes",
+    );
 
     const dispute = await repository.getDisputeById(input.disputeId);
     if (!dispute) {
@@ -116,8 +118,7 @@ export class DisputeService {
     }
 
     const now = new Date().toISOString();
-    const actorWalletBinding = await repository.getActiveWalletBindingByUser(input.actor.userId);
-    const actorWallet = actorWalletBinding?.walletAddress ?? null;
+    const actorWallet = await getBoundWalletOrThrow(input.actor);
 
     if (input.resolution === "reject_dispute") {
       const restoredStatus = dispute.frozenFromStatus === "Disputed" ? "Approved" : dispute.frozenFromStatus;

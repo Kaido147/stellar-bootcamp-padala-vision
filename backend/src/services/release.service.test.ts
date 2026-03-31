@@ -215,7 +215,17 @@ test("release intent allows operators without participant wallet match", async (
   });
 
   const service = new ReleaseService();
+  const operatorUserId = `ops-${randomUUID()}`;
+  const operatorWallet = Keypair.random().publicKey();
   const orderId = `${Date.now()}${Math.floor(Math.random() * 1000)}`;
+
+  await repository.upsertWalletBinding({
+    userId: operatorUserId,
+    walletAddress: operatorWallet,
+    walletProvider: "freighter",
+    challengeId: randomUUID(),
+    verifiedAt: new Date().toISOString(),
+  });
 
   await repository.createOrder({
     id: orderId,
@@ -245,7 +255,7 @@ test("release intent allows operators without participant wallet match", async (
 
   const result = await service.createReleaseIntent({
     actor: {
-      userId: `ops-${randomUUID()}`,
+      userId: operatorUserId,
       email: "ops@example.com",
       phone: null,
       accessToken: "token",

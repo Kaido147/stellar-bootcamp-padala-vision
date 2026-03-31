@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { HttpError } from "../lib/errors.js";
 import { repository } from "../lib/repository.js";
 import type { SessionActor } from "../middleware/auth.js";
+import { getBoundWalletOrThrow, isOperator } from "./authorization.service.js";
 import { ContractRegistryService } from "./contract-registry.service.js";
 
 const FUNDED_UNACCEPTED_TIMEOUT_MS = 2 * 60 * 60 * 1000;
@@ -25,12 +26,11 @@ export class RefundService {
       throw new HttpError(409, "Order is not eligible for refund", "refund_not_eligible");
     }
 
-    const actorWalletBinding = await repository.getActiveWalletBindingByUser(input.actor.userId);
-    const actorWallet = actorWalletBinding?.walletAddress ?? null;
-    const isOperator = input.actor.roles.includes("ops_reviewer") || input.actor.roles.includes("ops_admin");
+    const operator = isOperator(input.actor);
+    const actorWallet = await getBoundWalletOrThrow(input.actor);
 
-    if (!isOperator) {
-      if (!actorWallet || actorWallet !== order.buyerWallet) {
+    if (!operator) {
+      if (actorWallet !== order.buyerWallet) {
         throw new HttpError(403, "Refund intent requires the buyer or an authorized operator", "refund_forbidden");
       }
     }

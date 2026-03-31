@@ -235,6 +235,16 @@ test("operator can request refund intent without buyer wallet match", async () =
   const service = new RefundService();
   const orderId = `${Date.now()}${Math.floor(Math.random() * 1000)}`;
   const fundedAt = new Date(Date.now() - 2 * 60 * 60 * 1000 - 5_000).toISOString();
+  const operatorUserId = `ops-${randomUUID()}`;
+  const operatorWallet = Keypair.random().publicKey();
+
+  await repository.upsertWalletBinding({
+    userId: operatorUserId,
+    walletAddress: operatorWallet,
+    walletProvider: "freighter",
+    challengeId: randomUUID(),
+    verifiedAt: new Date().toISOString(),
+  });
 
   await repository.createOrder({
     id: orderId,
@@ -253,7 +263,7 @@ test("operator can request refund intent without buyer wallet match", async () =
 
   const result = await service.createRefundIntent({
     actor: {
-      userId: `ops-${randomUUID()}`,
+      userId: operatorUserId,
       email: "ops@example.com",
       phone: null,
       accessToken: "token",

@@ -11,12 +11,22 @@ import type {
 } from "@padala-vision/shared";
 import { HttpError } from "../lib/errors.js";
 import { repository } from "../lib/repository.js";
+import type { SessionActor } from "../middleware/auth.js";
+import { assertBoundWalletEquals, getBoundWalletOrThrow } from "./authorization.service.js";
 import { OracleService } from "./oracle.service.js";
 
 const oracleService = new OracleService();
 
 export class OrdersService {
-  async createOrder(request: CreateOrderRequest): Promise<CreateOrderResponse> {
+  async createOrder(request: CreateOrderRequest, actor: SessionActor): Promise<CreateOrderResponse> {
+    const boundWallet = await getBoundWalletOrThrow(actor);
+    assertBoundWalletEquals(
+      boundWallet,
+      request.seller_wallet,
+      "order_seller_wallet_mismatch",
+      "Seller wallet must match the authenticated bound wallet",
+    );
+
     const itemAmount = Number(request.item_amount);
     const deliveryFee = Number(request.delivery_fee);
     const totalAmount = itemAmount + deliveryFee;
@@ -79,33 +89,54 @@ export class OrdersService {
     };
   }
 
-  async markFunded(orderId: string) {
+  async markFunded(orderId: string, actor: SessionActor) {
     const order = await requireOrder(orderId);
     if (order.status !== "Draft") {
       throw new HttpError(409, "Only draft orders can be marked funded");
     }
+    const boundWallet = await getBoundWalletOrThrow(actor);
+    assertBoundWalletEquals(
+      boundWallet,
+      order.buyerWallet,
+      "order_buyer_wallet_mismatch",
+      "Buyer wallet must match the authenticated bound wallet",
+    );
 
     return repository.updateOrderStatus(orderId, "Funded", "Buyer funded escrow", {
       fundedAt: new Date().toISOString(),
     });
   }
 
-  async acceptRider(orderId: string, riderWallet: string) {
+  async acceptRider(orderId: string, riderWallet: string, actor: SessionActor) {
     const order = await requireOrder(orderId);
     if (order.status !== "Funded") {
       throw new HttpError(409, "Only funded orders can be accepted");
     }
+    const boundWallet = await getBoundWalletOrThrow(actor);
+    assertBoundWalletEquals(
+      boundWallet,
+      riderWallet,
+      "order_rider_wallet_mismatch",
+      "Rider wallet must match the authenticated bound wallet",
+    );
 
     return repository.updateOrderStatus(orderId, "RiderAssigned", "Rider accepted job", {
       riderWallet,
     });
   }
 
-  async markInTransit(orderId: string, riderWallet: string) {
+  async markInTransit(orderId: string, riderWallet: string, actor: SessionActor) {
     const order = await requireOrder(orderId);
     if (order.status !== "RiderAssigned") {
       throw new HttpError(409, "Only rider-assigned orders can move to in transit");
     }
+    const boundWallet = await getBoundWalletOrThrow(actor);
+    assertBoundWalletEquals(
+      boundWallet,
+      riderWallet,
+      "order_rider_wallet_mismatch",
+      "Rider wallet must match the authenticated bound wallet",
+    );
     if (order.riderWallet !== riderWallet) {
       throw new HttpError(403, "Only the assigned rider can mark the order in transit");
     }
@@ -113,11 +144,18 @@ export class OrdersService {
     return repository.updateOrderStatus(orderId, "InTransit", "Rider picked up parcel");
   }
 
-  async submitEvidence(request: EvidenceSubmitRequest): Promise<EvidenceSubmitResponse> {
+  async submitEvidence(request: EvidenceSubmitRequest, actor: SessionActor): Promise<EvidenceSubmitResponse> {
     const order = await requireOrder(request.order_id);
     if (order.status !== "InTransit") {
       throw new HttpError(409, "Evidence can only be submitted while the order is in transit");
     }
+    const boundWallet = await getBoundWalletOrThrow(actor);
+    assertBoundWalletEquals(
+      boundWallet,
+      request.rider_wallet,
+      "order_rider_wallet_mismatch",
+      "Rider wallet must match the authenticated bound wallet",
+    );
     if (order.riderWallet !== request.rider_wallet) {
       throw new HttpError(403, "Only the assigned rider can submit evidence");
     }
@@ -208,6 +246,24 @@ export class OrdersService {
       history: await repository.getHistory(orderId),
       transactions: await repository.getTransactions(orderId),
     };
+  }
+
+  async assertEvidenceUploadAuthorized(orderId: string, riderWallet: string, actor: SessionActor) {
+    const order = await requireOrder(orderId);
+    const boundWallet = await getBoundWalletOrThrow(actor);
+    assertBoundWalletEquals(
+      boundWallet,
+      riderWallet,
+      "order_rider_wallet_mismatch",
+      "Rider wallet must match the authenticated bound wallet",
+    );
+
+    if (order.status !== "InTransit") {
+      throw new HttpError(409, "Evidence can only be uploaded while the order is in transit");
+    }
+    if (order.riderWallet !== riderWallet) {
+      throw new HttpError(403, "Only the assigned rider can upload evidence");
+    }
   }
 }
 

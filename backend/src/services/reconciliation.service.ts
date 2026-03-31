@@ -1,6 +1,7 @@
 import { HttpError } from "../lib/errors.js";
 import { repository, type ReconciliationEventRecord } from "../lib/repository.js";
 import type { SessionActor } from "../middleware/auth.js";
+import { assertHasOperatorRole, getBoundWalletOrThrow } from "./authorization.service.js";
 import { ChainService, type ChainOrderStateSnapshot } from "./chain.service.js";
 import { ContractRegistryService } from "./contract-registry.service.js";
 
@@ -16,9 +17,11 @@ export class ReconciliationService {
     forceRefresh?: boolean;
     correlationId: string;
   }) {
-    if (!input.actor.roles.includes("ops_reviewer") && !input.actor.roles.includes("ops_admin")) {
-      throw new HttpError(403, "Only ops_reviewer or ops_admin can reconcile orders", "reconcile_forbidden");
-    }
+    assertHasOperatorRole(
+      input.actor,
+      "reconcile_forbidden",
+      "Only ops_reviewer or ops_admin can reconcile orders",
+    );
 
     const order = await repository.getOrder(input.orderId);
     if (!order) {
@@ -57,10 +60,12 @@ export class ReconciliationService {
       actionsTaken.push(`synced_order_status:${finalOrder.status}`);
     }
 
+    const actorWallet = await getBoundWalletOrThrow(input.actor);
+
     const event = await repository.createReconciliationEvent({
       orderId: input.orderId,
       actorUserId: input.actor.userId,
-      actorWallet: (await repository.getActiveWalletBindingByUser(input.actor.userId))?.walletAddress ?? null,
+      actorWallet,
       actorRoles: input.actor.roles,
       backendStateBefore: order.status,
       chainState: chainState.status,

@@ -44,7 +44,7 @@ test("reject_dispute closes dispute and restores frozen workflow state", async (
 
   const result = await service.resolveDispute({
     actor: {
-      userId: `ops-${randomUUID()}`,
+      userId: fixture.opsUserId,
       email: "ops@example.com",
       phone: null,
       accessToken: "token",
@@ -67,7 +67,7 @@ test("release resolution returns pending when chain proof is not provided", asyn
 
   const result = await service.resolveDispute({
     actor: {
-      userId: `ops-${randomUUID()}`,
+      userId: fixture.opsUserId,
       email: "ops@example.com",
       phone: null,
       accessToken: "token",
@@ -131,7 +131,7 @@ test("refund resolution remains pending without marking finality", async () => {
 
   const result = await service.resolveDispute({
     actor: {
-      userId: `ops-${randomUUID()}`,
+      userId: fixture.opsUserId,
       email: "ops@example.com",
       phone: null,
       accessToken: "token",

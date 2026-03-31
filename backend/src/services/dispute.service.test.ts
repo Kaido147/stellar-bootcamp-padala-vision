@@ -172,7 +172,17 @@ test("released or refunded orders cannot be disputed", async () => {
 
 test("operator can open dispute without participant wallet match", async () => {
   const service = new DisputeService();
+  const operatorUserId = `ops-${randomUUID()}`;
+  const operatorWallet = Keypair.random().publicKey();
   const orderId = `${Date.now()}${Math.floor(Math.random() * 1000)}`;
+
+  await repository.upsertWalletBinding({
+    userId: operatorUserId,
+    walletAddress: operatorWallet,
+    walletProvider: "freighter",
+    challengeId: randomUUID(),
+    verifiedAt: new Date().toISOString(),
+  });
 
   await repository.createOrder({
     id: orderId,
@@ -191,7 +201,7 @@ test("operator can open dispute without participant wallet match", async () => {
 
   const result = await service.openDispute({
     actor: {
-      userId: `ops-${randomUUID()}`,
+      userId: operatorUserId,
       email: "ops@example.com",
       phone: null,
       accessToken: "token",

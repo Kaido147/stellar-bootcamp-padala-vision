@@ -10,6 +10,11 @@ import {
   type SignedAttestationV2,
 } from "../lib/attestation.js";
 import { ChainService } from "./chain.service.js";
+import {
+  getBoundWalletOrThrow,
+  isOperator,
+  assertBoundWalletEquals,
+} from "./authorization.service.js";
 import { ContractRegistryService } from "./contract-registry.service.js";
 
 export class ReleaseService {
@@ -34,14 +39,13 @@ export class ReleaseService {
       throw new HttpError(409, "Order is not in a releasable approved state", "release_invalid_state");
     }
 
-    const actorWalletBinding = await repository.getActiveWalletBindingByUser(input.actor.userId);
-    const actorWallet = actorWalletBinding?.walletAddress ?? null;
-    const isOperator = input.actor.roles.includes("ops_reviewer") || input.actor.roles.includes("ops_admin");
+    const operator = isOperator(input.actor);
+    const actorWallet = await getBoundWalletOrThrow(input.actor);
     const isParticipant =
       actorWallet !== null &&
       [order.buyerWallet, order.sellerWallet, order.riderWallet].filter(Boolean).includes(actorWallet);
 
-    if (!isOperator && !isParticipant) {
+    if (!operator && !isParticipant) {
       throw new HttpError(403, "Release intent requires an authorized participant or operator", "release_forbidden");
     }
 
@@ -175,17 +179,19 @@ export class ReleaseService {
       throw new HttpError(409, "Disputed orders cannot be finalized as released", "release_dispute_blocked");
     }
 
-    const actorWalletBinding = await repository.getActiveWalletBindingByUser(input.actor.userId);
-    const actorWallet = actorWalletBinding?.walletAddress ?? null;
-    const isOperator = input.actor.roles.includes("ops_reviewer") || input.actor.roles.includes("ops_admin");
+    const operator = isOperator(input.actor);
+    const actorWallet = await getBoundWalletOrThrow(input.actor);
     const isParticipant =
       actorWallet !== null &&
       [order.buyerWallet, order.sellerWallet, order.riderWallet].filter(Boolean).includes(actorWallet);
 
-    if (!actorWallet || actorWallet !== input.submittedWallet) {
-      throw new HttpError(403, "Submitted wallet must match the authenticated bound wallet", "release_wallet_mismatch");
-    }
-    if (!isOperator && !isParticipant) {
+    assertBoundWalletEquals(
+      actorWallet,
+      input.submittedWallet,
+      "release_wallet_mismatch",
+      "Submitted wallet must match the authenticated bound wallet",
+    );
+    if (!operator && !isParticipant) {
       throw new HttpError(403, "Release recording requires an authorized participant or operator", "release_forbidden");
     }
 

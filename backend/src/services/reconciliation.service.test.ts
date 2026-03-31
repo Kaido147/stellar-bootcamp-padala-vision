@@ -45,6 +45,15 @@ test("only ops roles can reconcile orders", async () => {
 
 test("reconcile adopts proven funded state from chain", async () => {
   const { orderId } = await setupOrder("Draft");
+  const operatorUserId = `ops-${randomUUID()}`;
+  const operatorWallet = Keypair.random().publicKey();
+  await repository.upsertWalletBinding({
+    userId: operatorUserId,
+    walletAddress: operatorWallet,
+    walletProvider: "freighter",
+    challengeId: randomUUID(),
+    verifiedAt: new Date().toISOString(),
+  });
   const service = new ReconciliationService(
     new ChainService({
       getOrderState: async ({ orderId, contractId }) => ({
@@ -59,7 +68,7 @@ test("reconcile adopts proven funded state from chain", async () => {
   );
 
   const result = await service.reconcileOrder({
-    actor: opsActor(),
+    actor: opsActor(operatorUserId),
     orderId,
     correlationId: "corr-reconcile-2",
   });
@@ -71,6 +80,15 @@ test("reconcile adopts proven funded state from chain", async () => {
 
 test("reconcile adopts proven released state and creates transaction when needed", async () => {
   const { orderId } = await setupOrder("Approved");
+  const operatorUserId = `ops-${randomUUID()}`;
+  const operatorWallet = Keypair.random().publicKey();
+  await repository.upsertWalletBinding({
+    userId: operatorUserId,
+    walletAddress: operatorWallet,
+    walletProvider: "freighter",
+    challengeId: randomUUID(),
+    verifiedAt: new Date().toISOString(),
+  });
   const service = new ReconciliationService(
     new ChainService({
       getOrderState: async ({ orderId, contractId }) => ({
@@ -86,7 +104,7 @@ test("reconcile adopts proven released state and creates transaction when needed
   );
 
   const result = await service.reconcileOrder({
-    actor: opsActor(),
+    actor: opsActor(operatorUserId),
     orderId,
     forceRefresh: true,
     correlationId: "corr-reconcile-3",
@@ -175,9 +193,9 @@ async function setupOrder(status: "Draft" | "Funded" | "Approved" | "Released") 
   return { orderId };
 }
 
-function opsActor() {
+function opsActor(userId = `ops-${randomUUID()}`) {
   return {
-    userId: `ops-${randomUUID()}`,
+    userId,
     email: "ops@example.com",
     phone: null,
     accessToken: "token",

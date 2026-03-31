@@ -1,5 +1,6 @@
 import multer from "multer";
 import type { Request, Response } from "express";
+import { getSessionActor } from "../middleware/auth.js";
 import { OrdersService } from "../services/orders.service.js";
 import { StorageService } from "../services/storage.service.js";
 import {
@@ -25,8 +26,9 @@ function getIdParam(req: Request) {
 }
 
 export async function createOrder(req: Request, res: Response) {
+  const actor = getSessionActor(res);
   const payload = createOrderSchema.parse(req.body);
-  const result = await ordersService.createOrder(payload);
+  const result = await ordersService.createOrder(payload, actor);
   res.status(201).json(result);
 }
 
@@ -39,25 +41,30 @@ export async function listFundedJobs(_req: Request, res: Response) {
 }
 
 export async function acceptJob(req: Request, res: Response) {
+  const actor = getSessionActor(res);
   const payload = acceptJobSchema.parse(req.body);
-  res.json({ order: await ordersService.acceptRider(getIdParam(req), payload.rider_wallet) });
+  res.json({ order: await ordersService.acceptRider(getIdParam(req), payload.rider_wallet, actor) });
 }
 
 export async function fundOrder(req: Request, res: Response) {
-  res.json({ order: await ordersService.markFunded(getIdParam(req)) });
+  const actor = getSessionActor(res);
+  res.json({ order: await ordersService.markFunded(getIdParam(req), actor) });
 }
 
 export async function markInTransit(req: Request, res: Response) {
+  const actor = getSessionActor(res);
   const payload = markInTransitSchema.parse(req.body);
-  res.json({ order: await ordersService.markInTransit(getIdParam(req), payload.rider_wallet) });
+  res.json({ order: await ordersService.markInTransit(getIdParam(req), payload.rider_wallet, actor) });
 }
 
 export async function submitEvidence(req: Request, res: Response) {
+  const actor = getSessionActor(res);
   const payload = evidenceSubmitSchema.parse(req.body);
-  res.json(await ordersService.submitEvidence(payload));
+  res.json(await ordersService.submitEvidence(payload, actor));
 }
 
 export async function uploadEvidenceFile(req: Request, res: Response) {
+  const actor = getSessionActor(res);
   const file = req.file;
   if (!file) {
     return res.status(400).json({ error: "Evidence file is required" });
@@ -69,6 +76,8 @@ export async function uploadEvidenceFile(req: Request, res: Response) {
   if (!orderId || !riderWallet) {
     return res.status(400).json({ error: "order_id and rider_wallet are required" });
   }
+
+  await ordersService.assertEvidenceUploadAuthorized(orderId, riderWallet, actor);
 
   const result = await storageService.uploadEvidenceFile({
     orderId,
