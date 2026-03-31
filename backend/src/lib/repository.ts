@@ -132,14 +132,37 @@ export interface DisputeRecord {
   actorUserId: string;
   actorWallet: string | null;
   actorRoles: string[];
+  frozenFromStatus: OrderStatus;
   reasonCode: string;
   description: string;
   evidenceRefs: string[];
   status: "open" | "resolved";
   correlationId: string;
   lastActivityAt: string;
+  resolution: "release" | "refund" | "reject_dispute" | null;
+  resolutionReason: string | null;
+  resolutionNote: string | null;
+  resolvedByUserId: string | null;
+  resolvedByWallet: string | null;
+  resolvedByRoles: string[];
+  resolvedAt: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface DisputeEventRecord {
+  id: string;
+  disputeId: string;
+  orderId: string;
+  action: "opened" | "resolution_requested" | "resolved";
+  actorUserId: string;
+  actorWallet: string | null;
+  actorRoles: string[];
+  reason: string;
+  note: string | null;
+  resolution: "release" | "refund" | "reject_dispute" | null;
+  correlationId: string;
+  createdAt: string;
 }
 
 export interface Repository {
@@ -197,6 +220,26 @@ export interface Repository {
   ): Promise<ReleaseRecord>;
   createDispute(input: Omit<DisputeRecord, "createdAt" | "updatedAt">): Promise<DisputeRecord>;
   getOpenDisputeByOrderId(orderId: string): Promise<DisputeRecord | null>;
+  getDisputeById(id: string): Promise<DisputeRecord | null>;
+  updateDispute(
+    id: string,
+    patch: Partial<
+      Pick<
+        DisputeRecord,
+        | "status"
+        | "lastActivityAt"
+        | "resolution"
+        | "resolutionReason"
+        | "resolutionNote"
+        | "resolvedByUserId"
+        | "resolvedByWallet"
+        | "resolvedByRoles"
+        | "resolvedAt"
+        | "correlationId"
+      >
+    >,
+  ): Promise<DisputeRecord>;
+  createDisputeEvent(input: Omit<DisputeEventRecord, "id" | "createdAt">): Promise<DisputeEventRecord>;
 }
 
 export class InMemoryRepository implements Repository {
@@ -213,6 +256,7 @@ export class InMemoryRepository implements Repository {
   private releaseIntents = new Map<string, ReleaseIntentRecord>();
   private releaseRecords = new Map<string, ReleaseRecord>();
   private disputes = new Map<string, DisputeRecord>();
+  private disputeEvents: DisputeEventRecord[] = [];
   private nextOrderId = 1;
 
   generateOrderId(): string {
@@ -570,6 +614,54 @@ export class InMemoryRepository implements Repository {
   async getOpenDisputeByOrderId(orderId: string): Promise<DisputeRecord | null> {
     return [...this.disputes.values()].find((record) => record.orderId === orderId && record.status === "open") ?? null;
   }
+
+  async getDisputeById(id: string): Promise<DisputeRecord | null> {
+    return this.disputes.get(id) ?? null;
+  }
+
+  async updateDispute(
+    id: string,
+    patch: Partial<
+      Pick<
+        DisputeRecord,
+        | "status"
+        | "lastActivityAt"
+        | "resolution"
+        | "resolutionReason"
+        | "resolutionNote"
+        | "resolvedByUserId"
+        | "resolvedByWallet"
+        | "resolvedByRoles"
+        | "resolvedAt"
+        | "correlationId"
+      >
+    >,
+  ): Promise<DisputeRecord> {
+    const existing = this.disputes.get(id);
+    if (!existing) {
+      throw new Error(`Dispute ${id} not found`);
+    }
+
+    const updated: DisputeRecord = {
+      ...existing,
+      ...patch,
+      updatedAt: new Date().toISOString(),
+    };
+
+    this.disputes.set(id, updated);
+    return updated;
+  }
+
+  async createDisputeEvent(input: Omit<DisputeEventRecord, "id" | "createdAt">): Promise<DisputeEventRecord> {
+    const record: DisputeEventRecord = {
+      ...input,
+      id: uuid(),
+      createdAt: new Date().toISOString(),
+    };
+
+    this.disputeEvents.push(record);
+    return record;
+  }
 }
 
 type OrderRow = {
@@ -721,14 +813,37 @@ type DisputeRow = {
   actor_user_id: string;
   actor_wallet: string | null;
   actor_roles_json: string[] | string;
+  frozen_from_status: OrderStatus;
   reason_code: string;
   description: string;
   evidence_refs_json: string[] | string;
   status: "open" | "resolved";
   correlation_id: string;
   last_activity_at: string;
+  resolution: "release" | "refund" | "reject_dispute" | null;
+  resolution_reason: string | null;
+  resolution_note: string | null;
+  resolved_by_user_id: string | null;
+  resolved_by_wallet: string | null;
+  resolved_by_roles_json: string[] | string;
+  resolved_at: string | null;
   created_at: string;
   updated_at: string;
+};
+
+type DisputeEventRow = {
+  id: string;
+  dispute_id: string;
+  order_id: string;
+  action: "opened" | "resolution_requested" | "resolved";
+  actor_user_id: string;
+  actor_wallet: string | null;
+  actor_roles_json: string[] | string;
+  reason: string;
+  note: string | null;
+  resolution: "release" | "refund" | "reject_dispute" | null;
+  correlation_id: string;
+  created_at: string;
 };
 
 class SupabaseRepository implements Repository {
@@ -1372,12 +1487,20 @@ class SupabaseRepository implements Repository {
         actor_user_id: input.actorUserId,
         actor_wallet: input.actorWallet,
         actor_roles_json: input.actorRoles,
+        frozen_from_status: input.frozenFromStatus,
         reason_code: input.reasonCode,
         description: input.description,
         evidence_refs_json: input.evidenceRefs,
         status: input.status,
         correlation_id: input.correlationId,
         last_activity_at: input.lastActivityAt,
+        resolution: input.resolution,
+        resolution_reason: input.resolutionReason,
+        resolution_note: input.resolutionNote,
+        resolved_by_user_id: input.resolvedByUserId,
+        resolved_by_wallet: input.resolvedByWallet,
+        resolved_by_roles_json: input.resolvedByRoles,
+        resolved_at: input.resolvedAt,
       })
       .select("*")
       .single<DisputeRow>();
@@ -1402,6 +1525,92 @@ class SupabaseRepository implements Repository {
     }
 
     return data ? mapDisputeRow(data) : null;
+  }
+
+  async getDisputeById(id: string): Promise<DisputeRecord | null> {
+    const { data, error } = await this.client
+      .from("disputes")
+      .select("*")
+      .eq("id", id)
+      .maybeSingle<DisputeRow>();
+
+    if (error) {
+      throw new Error(`Failed to fetch dispute by id from Supabase: ${error.message}`);
+    }
+
+    return data ? mapDisputeRow(data) : null;
+  }
+
+  async updateDispute(
+    id: string,
+    patch: Partial<
+      Pick<
+        DisputeRecord,
+        | "status"
+        | "lastActivityAt"
+        | "resolution"
+        | "resolutionReason"
+        | "resolutionNote"
+        | "resolvedByUserId"
+        | "resolvedByWallet"
+        | "resolvedByRoles"
+        | "resolvedAt"
+        | "correlationId"
+      >
+    >,
+  ): Promise<DisputeRecord> {
+    const update: Record<string, unknown> = {
+      updated_at: new Date().toISOString(),
+    };
+
+    if (patch.status !== undefined) update.status = patch.status;
+    if (patch.lastActivityAt !== undefined) update.last_activity_at = patch.lastActivityAt;
+    if (patch.resolution !== undefined) update.resolution = patch.resolution;
+    if (patch.resolutionReason !== undefined) update.resolution_reason = patch.resolutionReason;
+    if (patch.resolutionNote !== undefined) update.resolution_note = patch.resolutionNote;
+    if (patch.resolvedByUserId !== undefined) update.resolved_by_user_id = patch.resolvedByUserId;
+    if (patch.resolvedByWallet !== undefined) update.resolved_by_wallet = patch.resolvedByWallet;
+    if (patch.resolvedByRoles !== undefined) update.resolved_by_roles_json = patch.resolvedByRoles;
+    if (patch.resolvedAt !== undefined) update.resolved_at = patch.resolvedAt;
+    if (patch.correlationId !== undefined) update.correlation_id = patch.correlationId;
+
+    const { data, error } = await this.client
+      .from("disputes")
+      .update(update)
+      .eq("id", id)
+      .select("*")
+      .single<DisputeRow>();
+
+    if (error || !data) {
+      throw new Error(`Failed to update dispute in Supabase: ${error?.message ?? "unknown error"}`);
+    }
+
+    return mapDisputeRow(data);
+  }
+
+  async createDisputeEvent(input: Omit<DisputeEventRecord, "id" | "createdAt">): Promise<DisputeEventRecord> {
+    const { data, error } = await this.client
+      .from("dispute_events")
+      .insert({
+        dispute_id: input.disputeId,
+        order_id: input.orderId,
+        action: input.action,
+        actor_user_id: input.actorUserId,
+        actor_wallet: input.actorWallet,
+        actor_roles_json: input.actorRoles,
+        reason: input.reason,
+        note: input.note,
+        resolution: input.resolution,
+        correlation_id: input.correlationId,
+      })
+      .select("*")
+      .single<DisputeEventRow>();
+
+    if (error || !data) {
+      throw new Error(`Failed to create dispute event in Supabase: ${error?.message ?? "unknown error"}`);
+    }
+
+    return mapDisputeEventRow(data);
   }
 
   private async insertStatusHistory(row: Omit<StatusHistoryRow, "id">) {
@@ -1620,14 +1829,39 @@ function mapDisputeRow(row: DisputeRow): DisputeRecord {
     actorUserId: row.actor_user_id,
     actorWallet: row.actor_wallet,
     actorRoles: Array.isArray(row.actor_roles_json) ? row.actor_roles_json : [],
+    frozenFromStatus: row.frozen_from_status,
     reasonCode: row.reason_code,
     description: row.description,
     evidenceRefs: Array.isArray(row.evidence_refs_json) ? row.evidence_refs_json : [],
     status: row.status,
     correlationId: row.correlation_id,
     lastActivityAt: row.last_activity_at,
+    resolution: row.resolution,
+    resolutionReason: row.resolution_reason,
+    resolutionNote: row.resolution_note,
+    resolvedByUserId: row.resolved_by_user_id,
+    resolvedByWallet: row.resolved_by_wallet,
+    resolvedByRoles: Array.isArray(row.resolved_by_roles_json) ? row.resolved_by_roles_json : [],
+    resolvedAt: row.resolved_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+  };
+}
+
+function mapDisputeEventRow(row: DisputeEventRow): DisputeEventRecord {
+  return {
+    id: row.id,
+    disputeId: row.dispute_id,
+    orderId: row.order_id,
+    action: row.action,
+    actorUserId: row.actor_user_id,
+    actorWallet: row.actor_wallet,
+    actorRoles: Array.isArray(row.actor_roles_json) ? row.actor_roles_json : [],
+    reason: row.reason,
+    note: row.note,
+    resolution: row.resolution,
+    correlationId: row.correlation_id,
+    createdAt: row.created_at,
   };
 }
 

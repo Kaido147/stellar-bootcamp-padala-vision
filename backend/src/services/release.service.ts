@@ -156,6 +156,7 @@ export class ReleaseService {
     attestationNonce: string;
     submittedWallet: string;
     correlationId: string;
+    allowDisputedResolution?: boolean;
   }) {
     const order = await repository.getOrder(input.orderId);
     if (!order) {
@@ -170,7 +171,7 @@ export class ReleaseService {
     if (order.status === "Released") {
       throw new HttpError(409, "Order has already been released", "release_already_recorded");
     }
-    if (order.status === "Disputed") {
+    if (order.status === "Disputed" && !input.allowDisputedResolution) {
       throw new HttpError(409, "Disputed orders cannot be finalized as released", "release_dispute_blocked");
     }
 
