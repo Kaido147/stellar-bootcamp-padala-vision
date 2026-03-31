@@ -87,14 +87,14 @@ export function RiderEvidencePage() {
           progress={progress}
         />
         {uploadedUrl ? (
-          <div className="rounded-3xl bg-sand/70 p-4">
+          <div className="surface-card p-4">
             <div className="text-sm font-semibold text-ink">Uploaded image</div>
             <img alt="Uploaded evidence preview" className="mt-3 h-56 w-full rounded-[1.5rem] object-cover" src={uploadedUrl} />
           </div>
         ) : null}
         {success ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700">{success}</div> : null}
         <button
-          className="rounded-full bg-coral px-5 py-3 text-sm font-semibold text-white disabled:opacity-60"
+          className="btn-primary"
           disabled={!file}
           onClick={() => void submit()}
           type="button"

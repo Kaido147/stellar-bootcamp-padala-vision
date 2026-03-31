@@ -19,14 +19,14 @@ export function EvidenceUploader({
 
   return (
     <div className="space-y-3">
-      <div className="rounded-[1.75rem] border border-dashed border-ink/20 bg-sand/70 p-4">
+      <div className="rounded-[1.75rem] border border-dashed border-line bg-sand/70 p-4">
         <div className="text-sm font-semibold text-ink">Delivery evidence</div>
         <div className="mt-1 text-sm text-ink/65">
           Mobile-first flow: capture or pick an image, review it here, then upload and submit for async review.
         </div>
         <div className="mt-3 flex flex-wrap gap-3">
           <button
-            className="rounded-full bg-ink px-4 py-2 text-sm font-semibold text-white"
+            className="btn-secondary"
             onClick={() => inputRef.current?.click()}
             type="button"
           >
@@ -34,7 +34,7 @@ export function EvidenceUploader({
           </button>
           {error && onRetry ? (
             <button
-              className="rounded-full border border-ink/15 px-4 py-2 text-sm font-semibold text-ink"
+              className="btn-secondary"
               onClick={onRetry}
               type="button"
             >
@@ -52,7 +52,7 @@ export function EvidenceUploader({
         />
       </div>
 
-      <div className="rounded-[1.75rem] bg-white p-4 shadow-sm">
+      <div className="surface-card p-4 shadow-sm">
         <div className="text-sm font-semibold text-ink">Preview</div>
         {previewUrl ? (
           <img
@@ -61,19 +61,19 @@ export function EvidenceUploader({
             src={previewUrl}
           />
         ) : (
-          <div className="mt-3 rounded-[1.5rem] bg-sand/70 p-8 text-center text-sm text-ink/55">
+          <div className="mt-3 rounded-[1.5rem] bg-night/90 p-8 text-center text-sm text-ink/55">
             No image selected yet.
           </div>
         )}
         <div className="mt-3 text-sm text-ink/65">{file ? file.name : "Choose a parcel handoff or doorstep photo."}</div>
       </div>
 
-      <div className="rounded-[1.75rem] bg-sand/70 p-4">
+      <div className="surface-card p-4">
         <div className="flex items-center justify-between text-sm text-ink">
           <span>Upload progress</span>
           <span>{progress}%</span>
         </div>
-        <div className="mt-2 h-3 overflow-hidden rounded-full bg-white">
+        <div className="mt-2 h-3 overflow-hidden rounded-full bg-night">
           <div
             className="h-full rounded-full bg-coral transition-all"
             style={{ width: `${progress}%` }}

@@ -4,11 +4,11 @@ import { KeyValueList } from "../components/KeyValueList";
 import { useWallet } from "../hooks/useWallet";
 import { api } from "../lib/api";
 import { shortenAddress } from "../lib/format";
-import { useAuth } from "../providers/AuthProvider";
+import { useAppState } from "../providers/AppStateProvider";
 
 export function BindWalletPage() {
   const wallet = useWallet();
-  const { walletBinding, rememberWalletBinding } = useAuth();
+  const { walletBinding, rememberWalletBinding } = useAppState();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -33,7 +33,7 @@ export function BindWalletPage() {
         signed_message: challenge.message,
       });
       rememberWalletBinding(verified.wallet_binding);
-      setSuccess(`Wallet ${shortenAddress(verified.wallet_binding.wallet_address)} is now bound to this account.`);
+      setSuccess(`Wallet ${shortenAddress(verified.wallet_binding.wallet_address)} is now bound to this device profile.`);
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "Wallet binding failed.");
     } finally {
@@ -53,21 +53,21 @@ export function BindWalletPage() {
       />
       {wallet.address && walletBinding?.wallet_address && wallet.address !== walletBinding.wallet_address ? (
         <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-          Wallet mismatch: the connected wallet does not match the last verified bound wallet for this frontend session cache.
+          Wallet mismatch: the connected wallet does not match the last locally verified wallet binding on this device.
         </div>
       ) : null}
       {error ? <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div> : null}
       {success ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700">{success}</div> : null}
       <div className="flex flex-wrap gap-3">
         <button
-          className="rounded-full bg-ink px-5 py-3 text-sm font-semibold text-white"
+          className="btn-secondary"
           onClick={() => void wallet.connectWallet().catch((nextError) => setError(nextError.message))}
           type="button"
         >
           {wallet.connecting ? "Connecting..." : "Connect Freighter"}
         </button>
         <button
-          className="rounded-full bg-coral px-5 py-3 text-sm font-semibold text-white disabled:opacity-60"
+          className="btn-primary"
           disabled={busy || !wallet.address || wallet.networkMismatch}
           onClick={() => void handleVerify()}
           type="button"

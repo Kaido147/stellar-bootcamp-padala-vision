@@ -35,11 +35,11 @@ export function RiderJobsPage() {
   return (
     <Card title="Rider Jobs" subtitle="Funded jobs currently available from backend workflow state.">
       {jobs.length === 0 ? (
-        <div className="rounded-3xl bg-sand/70 p-5 text-sm text-ink/70">No funded jobs available right now.</div>
+        <div className="surface-card p-5 text-sm text-ink/70">No funded jobs available right now.</div>
       ) : (
         <div className="space-y-3">
           {jobs.map((job) => (
-            <div key={job.id} className="rounded-3xl bg-sand/70 p-4">
+            <div key={job.id} className="surface-card p-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <div className="font-semibold text-ink">Order #{job.id}</div>

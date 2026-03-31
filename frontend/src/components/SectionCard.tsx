@@ -8,7 +8,7 @@ interface SectionCardProps extends PropsWithChildren {
 
 export function SectionCard({ title, subtitle, action, children }: SectionCardProps) {
   return (
-    <section className="rounded-3xl border border-ink/10 bg-white p-4 shadow-sm">
+    <section className="surface-card p-4 shadow-sm">
       <div className="mb-4 flex items-start justify-between gap-3">
         <div>
           <h2 className="font-display text-xl text-ink">{title}</h2>

@@ -24,20 +24,20 @@ export function BuyerFundPage() {
         order={orderResponse.order}
       />
       <FinancialSummaryCard order={orderResponse.order} />
-      <Card title="Buyer Funding" subtitle="Backend currently records funding state directly after authenticated confirmation.">
+      <Card title="Buyer Funding" subtitle="Funding visibility stays in the buyer flow even while the frozen backend limits direct chain execution.">
         <div className="rounded-3xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
           Chain-backed funding with Freighter cannot be completed end to end from the frozen backend because no funding intent or transaction-recording API exists yet. This page keeps the exact amount visible and routes the buyer into the canonical order detail, but it does not fake on-chain finality.
         </div>
-        {info ? <div className="rounded-2xl bg-sand/70 p-4 text-sm text-ink/75">{info}</div> : null}
+        {info ? <div className="surface-card p-4 text-sm text-ink/75">{info}</div> : null}
         <div className="flex flex-wrap gap-3">
           <button
-            className="rounded-full bg-ink px-5 py-3 text-sm font-semibold text-white"
+            className="btn-secondary"
             onClick={() => setInfo(`Exact escrow amount: ${orderResponse.order.totalAmount} USDC`)}
             type="button"
           >
             Show exact funding amount
           </button>
-          <Link className="rounded-full border border-ink/15 px-5 py-3 text-sm font-semibold text-ink" to={`/buyer/orders/${orderResponse.order.id}`}>
+          <Link className="btn-primary" to={`/buyer/orders/${orderResponse.order.id}`}>
             Open buyer order detail
           </Link>
         </div>

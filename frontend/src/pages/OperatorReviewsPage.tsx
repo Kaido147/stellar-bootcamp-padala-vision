@@ -8,9 +8,9 @@ import { useOrderData } from "../hooks/useOrderData";
 
 export function OperatorReviewsPage() {
   return (
-    <Card title="Operator Review Queue" subtitle="Protected operator route with the current backend limitation called out explicitly.">
+    <Card title="Operator Review Queue" subtitle="Operator-only route with the current backend limitation called out explicitly.">
       <div className="rounded-3xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-        The frozen backend currently exposes no review queue or review-detail read endpoint. This route is wired and protected, but a real queue cannot be rendered without backend-provided order ids to review.
+        The frozen backend currently exposes no review queue or review-detail read endpoint. This route is wired, but a real queue cannot be rendered without backend-provided order ids to review.
       </div>
       <Link className="inline-flex text-sm font-semibold text-coral" to="/settings/network">
         Return to diagnostics

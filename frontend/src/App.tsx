@@ -1,8 +1,9 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AppLayout } from "./components/AppLayout";
 import { BindWalletPage } from "./pages/BindWalletPage";
+import { BuyerHomePage } from "./pages/BuyerHomePage";
 import { BuyerFundPage } from "./pages/BuyerFundPage";
-import { LoginPage } from "./pages/LoginPage";
+import { LandingPage } from "./pages/LandingPage";
 import { OperatorDisputeDetailPage, OperatorDisputesPage } from "./pages/OperatorDisputesPage";
 import { OperatorReviewDetailPage, OperatorReviewsPage } from "./pages/OperatorReviewsPage";
 import { OrderDetailPage } from "./pages/OrderDetailPage";
@@ -11,22 +12,14 @@ import { RiderJobPage } from "./pages/RiderJobPage";
 import { RiderJobsPage } from "./pages/RiderJobsPage";
 import { SellerNewOrderPage } from "./pages/SellerNewOrderPage";
 import { SettingsNetworkPage } from "./pages/SettingsNetworkPage";
-import { AuthGuard } from "./routes/AuthGuard";
 import { RoleGuard } from "./routes/RoleGuard";
 
 export default function App() {
   return (
     <Routes>
-      <Route path="/login" element={<LoginPage />} />
-      <Route
-        path="/"
-        element={
-          <AuthGuard>
-            <AppLayout />
-          </AuthGuard>
-        }
-      >
-        <Route index element={<Navigate replace to="/settings/network" />} />
+      <Route path="/" element={<LandingPage />} />
+      <Route path="/login" element={<Navigate replace to="/" />} />
+      <Route path="/" element={<AppLayout />}>
         <Route path="bind-wallet" element={<BindWalletPage />} />
         <Route path="settings/network" element={<SettingsNetworkPage />} />
 
@@ -47,6 +40,14 @@ export default function App() {
           }
         />
 
+        <Route
+          path="buyer"
+          element={
+            <RoleGuard roles={["buyer"]}>
+              <BuyerHomePage />
+            </RoleGuard>
+          }
+        />
         <Route
           path="buyer/orders/:id/fund"
           element={

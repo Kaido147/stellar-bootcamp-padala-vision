@@ -26,11 +26,11 @@ export function RiderJobPage() {
       <FinancialSummaryCard order={order} />
       <Card title="Rider Actions" subtitle="Workflow state changes backed by the current frozen backend APIs.">
         <div className="rounded-3xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-          Real Freighter-backed assign and in-transit chain submission is blocked by the current backend surface because there are no assign/in-transit transaction intents or recording endpoints. These controls call the authenticated workflow endpoints only.
+          Real Freighter-backed assign and in-transit chain submission is blocked by the current backend surface because there are no assign or in-transit transaction intents or recording endpoints yet.
         </div>
         <div className="flex flex-wrap gap-3">
           <button
-            className="rounded-full bg-ink px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+            className="btn-primary px-4 py-2"
             disabled={!wallet.address || order.status !== "Funded"}
             onClick={() => {
               setMessage(null);
@@ -46,7 +46,7 @@ export function RiderJobPage() {
             Accept job
           </button>
           <button
-            className="rounded-full border border-ink/15 px-4 py-2 text-sm font-semibold text-ink disabled:opacity-60"
+            className="btn-secondary px-4 py-2"
             disabled={!wallet.address || order.status !== "RiderAssigned"}
             onClick={() => {
               setMessage(null);
@@ -61,11 +61,11 @@ export function RiderJobPage() {
           >
             Mark in transit
           </button>
-          <Link className="rounded-full border border-ink/15 px-4 py-2 text-sm font-semibold text-ink" to={`/rider/jobs/${order.id}/evidence`}>
+          <Link className="btn-secondary px-4 py-2" to={`/rider/jobs/${order.id}/evidence`}>
             Open evidence capture
           </Link>
         </div>
-        {message ? <div className="rounded-2xl bg-sand/70 p-4 text-sm text-ink/75">{message}</div> : null}
+        {message ? <div className="surface-card p-4 text-sm text-ink/75">{message}</div> : null}
       </Card>
     </div>
   );

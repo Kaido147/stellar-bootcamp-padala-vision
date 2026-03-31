@@ -1,11 +1,11 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card } from "../components/Card";
-import { useAuth } from "../providers/AuthProvider";
 import { api } from "../lib/api";
+import { useAppState } from "../providers/AppStateProvider";
 
 export function SellerNewOrderPage() {
-  const { walletBinding } = useAuth();
+  const { walletBinding } = useAppState();
   const navigate = useNavigate();
   const [buyerWallet, setBuyerWallet] = useState("");
   const [itemAmount, setItemAmount] = useState("15.00");
@@ -20,7 +20,7 @@ export function SellerNewOrderPage() {
     <Card title="Create Seller Order" subtitle="Creates the workflow record against the frozen backend.">
       {!walletBinding ? (
         <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-          Bind the seller wallet first. The backend rejects order creation unless `seller_wallet` matches the authenticated bound wallet.
+          Bind the seller wallet first. The backend still expects `seller_wallet` to match the wallet you verify here before order creation.
         </div>
       ) : null}
       <form
@@ -53,7 +53,7 @@ export function SellerNewOrderPage() {
         <label className="block text-sm font-semibold text-ink">
           Buyer wallet
           <input
-            className="mt-1 w-full rounded-2xl border border-ink/10 bg-sand/60 px-4 py-3"
+            className="field-input"
             onChange={(event) => setBuyerWallet(event.target.value)}
             value={buyerWallet}
           />
@@ -62,7 +62,7 @@ export function SellerNewOrderPage() {
           <label className="block text-sm font-semibold text-ink">
             Item amount
             <input
-              className="mt-1 w-full rounded-2xl border border-ink/10 bg-sand/60 px-4 py-3"
+              className="field-input"
               onChange={(event) => setItemAmount(event.target.value)}
               value={itemAmount}
             />
@@ -70,7 +70,7 @@ export function SellerNewOrderPage() {
           <label className="block text-sm font-semibold text-ink">
             Delivery fee
             <input
-              className="mt-1 w-full rounded-2xl border border-ink/10 bg-sand/60 px-4 py-3"
+              className="field-input"
               onChange={(event) => setDeliveryFee(event.target.value)}
               value={deliveryFee}
             />
@@ -79,7 +79,7 @@ export function SellerNewOrderPage() {
         <label className="block text-sm font-semibold text-ink">
           Expires at
           <input
-            className="mt-1 w-full rounded-2xl border border-ink/10 bg-sand/60 px-4 py-3"
+            className="field-input"
             onChange={(event) => setExpiresAt(event.target.value)}
             type="datetime-local"
             value={expiresAt}
@@ -87,7 +87,7 @@ export function SellerNewOrderPage() {
         </label>
         {error ? <div className="rounded-2xl bg-red-50 p-3 text-sm text-red-700">{error}</div> : null}
         <button
-          className="rounded-full bg-coral px-5 py-3 text-sm font-semibold text-white disabled:opacity-60"
+          className="btn-primary"
           disabled={busy || !walletBinding}
           type="submit"
         >

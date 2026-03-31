@@ -9,7 +9,7 @@ import { api } from "../lib/api";
 
 export function OperatorDisputesPage() {
   return (
-    <Card title="Operator Dispute Queue" subtitle="Protected route, pending backend queue reads.">
+    <Card title="Operator Dispute Queue" subtitle="Role-restricted route, pending backend queue reads.">
       <div className="rounded-3xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
         The frozen backend provides dispute creation and resolution actions, but no queue or detail read endpoint for disputes. A true operator queue cannot be fetched from the current API surface.
       </div>
@@ -42,7 +42,7 @@ export function OperatorDisputeDetailPage({ participantView = false }: { partici
             }}
           />
         )}
-        {message ? <div className="rounded-2xl bg-sand/70 p-4 text-sm text-ink/75">{message}</div> : null}
+        {message ? <div className="surface-card p-4 text-sm text-ink/75">{message}</div> : null}
       </Card>
     </div>
   );

@@ -13,14 +13,14 @@ export function EventTimeline({
     <Card title="Timeline" subtitle="Backend workflow changes and confirmed transaction records.">
       <ol className="space-y-3">
         {history.map((entry) => (
-          <li key={entry.id} className="rounded-3xl border border-ink/10 bg-sand/60 p-4">
+          <li key={entry.id} className="surface-card p-4">
             <div className="text-sm font-semibold text-ink">{entry.newStatus}</div>
             <div className="mt-1 text-xs text-ink/55">{formatDateTime(entry.changedAt)}</div>
             {entry.note ? <div className="mt-2 text-sm text-ink/75">{entry.note}</div> : null}
           </li>
         ))}
         {transactions.map((tx) => (
-          <li key={tx.id} className="rounded-3xl border border-ink/10 bg-white p-4">
+          <li key={tx.id} className="surface-card p-4">
             <div className="text-sm font-semibold text-ink">
               {tx.txType} transaction {tx.txStatus}
             </div>

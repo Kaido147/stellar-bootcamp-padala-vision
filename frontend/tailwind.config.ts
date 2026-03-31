@@ -5,19 +5,23 @@ export default {
   theme: {
     extend: {
       colors: {
-        sand: "#f5e8d6",
-        ink: "#182028",
-        coral: "#db6b45",
-        moss: "#668b6c",
-        gold: "#d6a44d",
-        shell: "#f1ece3",
+        shell: "#04070d",
+        night: "#081118",
+        sand: "#0c141b",
+        line: "#1a2a34",
+        haze: "#8da4b0",
+        ink: "#f4fbf7",
+        coral: "#b8ff64",
+        moss: "#46d98a",
+        gold: "#d7f59c",
       },
       fontFamily: {
-        display: ["Iowan Old Style", "Palatino Linotype", "Book Antiqua", "serif"],
-        body: ["Avenir Next", "Segoe UI", "sans-serif"],
+        display: ["Space Grotesk", "ui-sans-serif", "sans-serif"],
+        body: ["Manrope", "ui-sans-serif", "sans-serif"],
       },
       boxShadow: {
-        card: "0 18px 40px rgba(24, 32, 40, 0.12)",
+        card: "0 28px 80px rgba(0, 0, 0, 0.42)",
+        glow: "0 0 0 1px rgba(184, 255, 100, 0.08), 0 18px 50px rgba(144, 255, 87, 0.18)",
       },
     },
   },

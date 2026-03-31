@@ -1,14 +1,48 @@
+@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap");
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+html {
+  scroll-behavior: smooth;
+}
+
 body {
-  @apply bg-sand text-ink font-body;
+  @apply bg-shell font-body text-ink antialiased;
+  position: relative;
+  min-height: 100vh;
+  color-scheme: dark;
   background-image:
-    radial-gradient(circle at top left, rgba(219, 107, 69, 0.16), transparent 26%),
-    radial-gradient(circle at 80% 20%, rgba(214, 164, 77, 0.18), transparent 24%),
-    radial-gradient(circle at bottom right, rgba(102, 139, 108, 0.18), transparent 22%),
-    linear-gradient(180deg, #f7f3ed 0%, #f1ece3 100%);
+    radial-gradient(circle at top left, rgba(184, 255, 100, 0.12), transparent 28%),
+    radial-gradient(circle at 82% 18%, rgba(84, 211, 138, 0.08), transparent 22%),
+    radial-gradient(circle at bottom right, rgba(33, 70, 88, 0.5), transparent 28%),
+    linear-gradient(180deg, #04070d 0%, #050912 46%, #07111a 100%);
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.32;
+  background-image:
+    linear-gradient(rgba(164, 189, 199, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(164, 189, 199, 0.08) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(circle at center, black 0%, rgba(0, 0, 0, 0.82) 50%, transparent 85%);
+}
+
+body::after {
+  content: "";
+  position: fixed;
+  inset: auto 10% 5% auto;
+  width: 26rem;
+  height: 26rem;
+  pointer-events: none;
+  border-radius: 9999px;
+  background: radial-gradient(circle, rgba(184, 255, 100, 0.08) 0%, transparent 65%);
+  filter: blur(18px);
 }
 
 body,
@@ -21,4 +55,35 @@ select {
 
 #root {
   @apply min-h-screen;
+}
+
+a,
+button {
+  @apply transition duration-200;
+}
+
+@layer components {
+  .surface-panel {
+    @apply rounded-[2rem] border border-line bg-white/[0.035] shadow-card backdrop-blur;
+  }
+
+  .surface-card {
+    @apply rounded-[1.75rem] border border-line bg-sand/85;
+  }
+
+  .btn-primary {
+    @apply rounded-full bg-coral px-5 py-3 text-sm font-semibold text-night shadow-glow hover:-translate-y-0.5 hover:bg-coral/90 disabled:cursor-not-allowed disabled:opacity-60;
+  }
+
+  .btn-secondary {
+    @apply rounded-full border border-line bg-white/[0.02] px-5 py-3 text-sm font-semibold text-ink hover:-translate-y-0.5 hover:border-coral/35 hover:bg-white/[0.05];
+  }
+
+  .field-input {
+    @apply mt-1 w-full rounded-2xl border border-line bg-night/90 px-4 py-3 text-ink outline-none ring-0 transition placeholder:text-ink/35 focus:border-coral/45 focus:ring-2 focus:ring-coral/15;
+  }
+
+  .section-kicker {
+    @apply text-[11px] font-semibold uppercase tracking-[0.3em] text-coral/90;
+  }
 }

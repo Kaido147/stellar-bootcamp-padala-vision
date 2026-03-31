@@ -8,7 +8,7 @@ export function LoadState({
   onRetry?: () => void;
 }) {
   if (loading) {
-    return <div className="rounded-[2rem] bg-white/90 p-6 text-sm text-ink/70 shadow-card">Loading...</div>;
+    return <div className="surface-panel p-6 text-sm text-ink/70">Loading...</div>;
   }
 
   if (!error) {

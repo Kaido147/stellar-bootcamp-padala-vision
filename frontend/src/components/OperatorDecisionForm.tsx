@@ -26,7 +26,7 @@ export function OperatorDecisionForm({
       <label className="block text-sm font-semibold text-ink">
         Resolution
         <select
-          className="mt-1 w-full rounded-2xl border border-ink/10 bg-sand/50 px-4 py-3"
+          className="field-input"
           onChange={(event) => setResolution(event.target.value as "release" | "refund" | "reject_dispute")}
           value={resolution}
         >
@@ -38,7 +38,7 @@ export function OperatorDecisionForm({
       <label className="block text-sm font-semibold text-ink">
         Reason
         <input
-          className="mt-1 w-full rounded-2xl border border-ink/10 bg-sand/50 px-4 py-3"
+          className="field-input"
           onChange={(event) => setReason(event.target.value)}
           value={reason}
         />
@@ -46,13 +46,13 @@ export function OperatorDecisionForm({
       <label className="block text-sm font-semibold text-ink">
         Note
         <textarea
-          className="mt-1 min-h-28 w-full rounded-2xl border border-ink/10 bg-sand/50 px-4 py-3"
+          className="field-input min-h-28"
           onChange={(event) => setNote(event.target.value)}
           value={note}
         />
       </label>
       <button
-        className="rounded-full bg-ink px-5 py-3 text-sm font-semibold text-white"
+        className="btn-primary"
         disabled={busy || !reason.trim() || !note.trim()}
         type="submit"
       >

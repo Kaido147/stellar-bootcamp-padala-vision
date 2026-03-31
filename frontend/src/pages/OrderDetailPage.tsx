@@ -51,16 +51,16 @@ export function OrderDetailPage({
           ]}
         />
         <div className="flex flex-wrap gap-3">
-          <Link className="rounded-full border border-ink/15 px-4 py-2 text-sm font-semibold text-ink" to={`/orders/${order.id}/timeline`}>
+          <Link className="btn-secondary px-4 py-2" to={`/orders/${order.id}/timeline`}>
             Open timeline route
           </Link>
           {audience === "buyer" ? (
-            <Link className="rounded-full border border-ink/15 px-4 py-2 text-sm font-semibold text-ink" to={`/buyer/orders/${order.id}/fund`}>
+            <Link className="btn-secondary px-4 py-2" to={`/buyer/orders/${order.id}/fund`}>
               Open funding route
             </Link>
           ) : null}
           {order.status === "Disputed" ? (
-            <Link className="rounded-full border border-ink/15 px-4 py-2 text-sm font-semibold text-ink" to={`/disputes/${order.id}`}>
+            <Link className="btn-secondary px-4 py-2" to={`/disputes/${order.id}`}>
               Open dispute detail route
             </Link>
           ) : null}
@@ -70,7 +70,7 @@ export function OrderDetailPage({
       <Card title="Available Actions" subtitle="Actions are limited to the existing frozen backend APIs.">
         <div className="flex flex-wrap gap-3">
           <button
-            className="rounded-full bg-ink px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+            className="btn-primary px-4 py-2"
             disabled={busy || order.status !== "Approved" || wallet.networkMismatch || !wallet.address}
             onClick={() => {
               setBusy(true);
@@ -111,7 +111,7 @@ export function OrderDetailPage({
             Relay release with Freighter
           </button>
           <button
-            className="rounded-full border border-ink/15 px-4 py-2 text-sm font-semibold text-ink"
+            className="btn-secondary px-4 py-2"
             onClick={() => {
               setRefundInfo(null);
               void api
@@ -128,7 +128,7 @@ export function OrderDetailPage({
             Check refund availability
           </button>
           <button
-            className="rounded-full border border-ink/15 px-4 py-2 text-sm font-semibold text-ink"
+            className="btn-secondary px-4 py-2"
             onClick={() => {
               setDisputeMessage(null);
               void api
@@ -150,8 +150,8 @@ export function OrderDetailPage({
             Open dispute
           </button>
         </div>
-        {refundInfo ? <div className="rounded-2xl bg-sand/70 p-4 text-sm text-ink/75">{refundInfo}</div> : null}
-        {disputeMessage ? <div className="rounded-2xl bg-sand/70 p-4 text-sm text-ink/75">{disputeMessage}</div> : null}
+        {refundInfo ? <div className="surface-card p-4 text-sm text-ink/75">{refundInfo}</div> : null}
+        {disputeMessage ? <div className="surface-card p-4 text-sm text-ink/75">{disputeMessage}</div> : null}
       </Card>
       <TxProgressCard
         error={txError}

@@ -29,7 +29,7 @@ export function TxProgressCard({
             <div
               key={value}
               className={`rounded-2xl border px-3 py-3 text-center text-xs font-semibold ${
-                active ? "border-ink bg-ink text-white" : "border-ink/10 bg-sand/60 text-ink/55"
+                active ? "border-coral/35 bg-coral text-night" : "border-line bg-night/80 text-ink/55"
               }`}
             >
               {value}
@@ -41,7 +41,7 @@ export function TxProgressCard({
         <div className="rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>
       ) : null}
       {txHash ? (
-        <div className="rounded-2xl bg-sand/70 p-3 text-sm text-ink/75">
+        <div className="surface-card p-3 text-sm text-ink/75">
           <div className="font-semibold text-ink">Tx hash</div>
           <div className="mt-1 break-all font-mono text-xs">{txHash}</div>
           <a className="mt-2 inline-flex font-semibold text-coral" href={getExplorerUrl(txHash)} rel="noreferrer" target="_blank">

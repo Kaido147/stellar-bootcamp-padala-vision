@@ -6,7 +6,7 @@ export function Timeline({ entries }: { entries: OrderStatusHistoryEntry[] }) {
       {entries.map((entry) => (
         <li
           key={entry.id}
-          className="rounded-2xl border border-ink/10 bg-sand/60 p-3"
+          className="surface-card p-3"
         >
           <div className="text-sm font-semibold text-ink">{entry.newStatus}</div>
           <div className="text-xs text-ink/60">{new Date(entry.changedAt).toLocaleString()}</div>
