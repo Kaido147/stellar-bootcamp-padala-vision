@@ -8,7 +8,7 @@ export function RoleEntryButton({
   density = "regular",
   className = "",
 }: {
-  role: Extract<AppRole, "seller" | "buyer" | "rider">;
+  role: AppRole;
   variant?: "primary" | "secondary";
   density?: "compact" | "regular";
   className?: string;
@@ -30,7 +30,7 @@ export function RoleEntryButton({
       } ${density === "compact" ? "px-4 py-4" : "px-5 py-5"} ${className}`}
       onClick={() => {
         selectRole(role);
-        navigate(option.homePath);
+        navigate(`/enter/${role}`);
       }}
       type="button"
     >

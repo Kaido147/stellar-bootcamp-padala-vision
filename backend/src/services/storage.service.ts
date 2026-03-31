@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import type { EvidenceUploadResult } from "@padala-vision/shared";
 import { env } from "../config/env.js";
 import { HttpError } from "../lib/errors.js";
-import { getSupabaseAdminClient } from "../lib/supabase.js";
+import { getSupabaseAdminClient, isSupabaseConfigured } from "../lib/supabase.js";
 
 let bucketEnsured = false;
 
@@ -16,6 +16,20 @@ export class StorageService {
   }): Promise<EvidenceUploadResult> {
     const client = getSupabaseAdminClient();
     if (!client) {
+      if (!isSupabaseConfigured()) {
+        const fileHash = createHash("sha256").update(input.bytes).digest("hex");
+        const safeName = sanitizeFilename(input.fileName);
+        const extension = safeName.includes(".") ? safeName.split(".").pop() : "jpg";
+        const storagePath = `memory/orders/${input.orderId}/${Date.now()}-${fileHash.slice(0, 12)}.${extension}`;
+
+        return {
+          storagePath,
+          signedUrl: `https://memory.invalid/${storagePath}`,
+          fileHash,
+          contentType: input.contentType,
+        };
+      }
+
       throw new HttpError(500, "Supabase is required for evidence uploads");
     }
 

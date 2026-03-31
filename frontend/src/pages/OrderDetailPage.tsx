@@ -1,165 +1,240 @@
-import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link, Navigate, useParams } from "react-router-dom";
+import type {
+  BuyerOrderDetailResponse,
+  SellerOrderDetailResponse,
+  SharedOrderDetailResponse,
+} from "@padala-vision/shared";
+import { Breadcrumbs } from "../components/Breadcrumbs";
 import { Card } from "../components/Card";
-import { EventTimeline } from "../components/EventTimeline";
-import { FinancialSummaryCard } from "../components/FinancialSummaryCard";
-import { KeyValueList } from "../components/KeyValueList";
 import { LoadState } from "../components/LoadState";
-import { OrderStatusHeader } from "../components/OrderStatusHeader";
-import { ReviewResultCard } from "../components/ReviewResultCard";
-import { TxProgressCard } from "../components/TxProgressCard";
-import { useOrderData } from "../hooks/useOrderData";
-import { api } from "../lib/api";
-import { formatDateTime } from "../lib/format";
-import { submitReleaseTransaction, type TxStage } from "../lib/stellar";
-import { useWallet } from "../hooks/useWallet";
+import { WorkflowOrderDetailContent } from "../components/WorkflowOrderDetailContent";
+import { getRoleHomePath } from "../lib/roles";
+import { workflowApi } from "../lib/api";
+import { useAuth } from "../providers/AuthProvider";
 
-export function OrderDetailPage({
-  audience,
-}: {
-  audience: "seller" | "buyer" | "timeline";
-}) {
+type Audience = "seller" | "buyer" | "timeline";
+
+export function OrderDetailPage({ audience }: { audience: Audience }) {
   const { id } = useParams();
-  const wallet = useWallet();
-  const { orderResponse, historyResponse, loading, error, refresh } = useOrderData(id);
-  const [txStage, setTxStage] = useState<TxStage | null>(null);
-  const [txHash, setTxHash] = useState<string | null>(null);
-  const [txError, setTxError] = useState<string | null>(null);
-  const [refundInfo, setRefundInfo] = useState<string | null>(null);
-  const [disputeMessage, setDisputeMessage] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const { actor, authReady } = useAuth();
+  const [detail, setDetail] = useState<SellerOrderDetailResponse | BuyerOrderDetailResponse | SharedOrderDetailResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [issuedLink, setIssuedLink] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
 
-  if (!orderResponse || !historyResponse) {
-    return <LoadState error={error} loading={loading} onRetry={() => void refresh()} />;
+  useEffect(() => {
+    if (audience === "timeline" && !authReady) {
+      return;
+    }
+
+    if (audience === "timeline" && !actor) {
+      setLoading(false);
+      setError(null);
+      return;
+    }
+
+    if (!id) {
+      setLoading(false);
+      setError("Order id is missing.");
+      return;
+    }
+
+    const orderId = id;
+
+    let cancelled = false;
+
+    async function load() {
+      setLoading(true);
+      setError(null);
+      try {
+        const response =
+          audience === "seller"
+            ? await workflowApi.getSellerWorkflowOrder(orderId)
+            : audience === "buyer"
+              ? await workflowApi.getBuyerWorkflowOrder(orderId)
+              : await workflowApi.getSharedWorkflowOrder(orderId);
+
+        if (!cancelled) {
+          setDetail(response);
+        }
+      } catch (nextError) {
+        if (!cancelled) {
+          setError(nextError instanceof Error ? nextError.message : "Could not load order detail.");
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    }
+
+    void load();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [actor, audience, authReady, id]);
+
+  if (audience === "timeline" && authReady && !actor) {
+    return (
+      <Card
+        title="Re-enter your workspace"
+        subtitle="Shared order links are now a compatibility path. Use your actor workspace to reopen the order safely."
+      >
+        <div className="surface-card p-4 text-sm leading-6 text-ink/68">
+          This order link no longer acts as a primary entry path. Re-enter the correct workspace, then continue from your database-backed order list.
+        </div>
+        <div className="flex flex-wrap gap-3">
+          <Link className="btn-primary px-4 py-2" to="/">
+            Go to home
+          </Link>
+        </div>
+      </Card>
+    );
   }
 
-  const order = orderResponse.order;
+  if (!detail) {
+    return <LoadState error={error} loading={loading} />;
+  }
+
+  if (audience === "timeline") {
+    const redirectPath = getSharedDetailRedirectPath(detail as SharedOrderDetailResponse);
+    if (redirectPath) {
+      return <Navigate replace to={redirectPath} />;
+    }
+  }
+
+  const subtitle =
+    audience === "seller"
+      ? "Seller detail stays focused on buyer invite recovery, fulfillment visibility, and settlement state."
+      : audience === "buyer"
+        ? "Buyer detail stays focused on funding, proof review, and confirmation access."
+        : "Shared order detail now exists only as a compatibility handoff back into the correct workspace.";
+
+  const actions = (
+    <div className="mt-4 flex flex-wrap gap-3">
+      {audience === "seller" ? (
+        <>
+          {"buyerInviteActive" in detail ? (
+            <button
+              className="btn-secondary px-4 py-2"
+              onClick={() => {
+                void workflowApi
+                  .reissueSellerBuyerInvite(detail.order.orderId)
+                  .then((response) => {
+                    setIssuedLink(`${window.location.origin}/buyer/claim/${response.buyerInvite.token}`);
+                    setMessage("Buyer invite reissued.");
+                  })
+                  .catch((nextError) => {
+                    setMessage(nextError instanceof Error ? nextError.message : "Could not reissue buyer invite.");
+                  });
+              }}
+              type="button"
+            >
+              Reissue buyer invite
+            </button>
+          ) : null}
+          {detail.order.status === "awaiting_funding" ? (
+            <button
+              className="btn-secondary px-4 py-2"
+              onClick={() => {
+                void workflowApi
+                  .cancelSellerWorkflowOrder(detail.order.orderId)
+                  .then(() => {
+                    setMessage("Order cancelled.");
+                  })
+                  .catch((nextError) => {
+                    setMessage(nextError instanceof Error ? nextError.message : "Could not cancel order.");
+                  });
+              }}
+              type="button"
+            >
+              Cancel order
+            </button>
+          ) : null}
+        </>
+      ) : null}
+
+      {audience === "buyer" ? (
+        <>
+          {detail.order.status === "awaiting_funding" ? (
+            <Link className="btn-primary px-4 py-2" to={`/buyer/orders/${detail.order.orderId}/fund`}>
+              Fund escrow
+            </Link>
+          ) : null}
+          {"confirmationTokenActive" in detail ? (
+            <button
+              className="btn-secondary px-4 py-2"
+              onClick={() => {
+                void workflowApi
+                  .reissueBuyerConfirmation(detail.order.orderId)
+                  .then((response) => {
+                    setIssuedLink(`${window.location.origin}/confirm/delivery/${response.deliveryConfirmation.token}`);
+                    setMessage("Confirmation access reissued.");
+                  })
+                  .catch((nextError) => {
+                    setMessage(nextError instanceof Error ? nextError.message : "Could not reissue confirmation.");
+                  });
+              }}
+              type="button"
+            >
+              Reissue confirmation access
+            </button>
+          ) : null}
+        </>
+      ) : null}
+
+      {audience === "timeline" && actor ? (
+        <Link className="btn-primary px-4 py-2" to={getRoleHomePath(actor.role)}>
+          Return to {actor.role} workspace
+        </Link>
+      ) : null}
+    </div>
+  );
 
   return (
     <div className="space-y-4">
-      <OrderStatusHeader history={historyResponse.history} latestDecision={orderResponse.latest_decision} order={order} />
-      <FinancialSummaryCard order={order} />
-      <Card title="Order Summary" subtitle={`View: ${audience}`}>
-        <KeyValueList
-          items={[
-            { label: "Seller wallet", value: order.sellerWallet },
-            { label: "Buyer wallet", value: order.buyerWallet },
-            { label: "Rider wallet", value: order.riderWallet ?? "Not assigned" },
-            { label: "Created at", value: formatDateTime(order.createdAt) },
-            { label: "Updated at", value: formatDateTime(order.updatedAt) },
-            { label: "Contract id", value: order.contractId ?? "Not recorded by backend" },
-          ]}
-        />
-        <div className="flex flex-wrap gap-3">
-          <Link className="btn-secondary px-4 py-2" to={`/orders/${order.id}/timeline`}>
-            Open timeline route
-          </Link>
-          {audience === "buyer" ? (
-            <Link className="btn-secondary px-4 py-2" to={`/buyer/orders/${order.id}/fund`}>
-              Open funding route
-            </Link>
-          ) : null}
-          {order.status === "Disputed" ? (
-            <Link className="btn-secondary px-4 py-2" to={`/disputes/${order.id}`}>
-              Open dispute detail route
-            </Link>
-          ) : null}
-        </div>
-      </Card>
-      <ReviewResultCard latestDecision={orderResponse.latest_decision} />
-      <Card title="Available Actions" subtitle="Actions are limited to the existing frozen backend APIs.">
-        <div className="flex flex-wrap gap-3">
-          <button
-            className="btn-primary px-4 py-2"
-            disabled={busy || order.status !== "Approved" || wallet.networkMismatch || !wallet.address}
-            onClick={() => {
-              setBusy(true);
-              setTxError(null);
-              setTxHash(null);
-              setTxStage("Prepare");
-              void api
-                .createReleaseIntent({ order_id: order.id })
-                .then(async (releaseIntent) => {
-                  const release = await submitReleaseTransaction({
-                    releaseIntent,
-                    sourceAddress: wallet.address ?? undefined,
-                    onStageChange: (stage, hash) => {
-                      setTxStage(stage);
-                      if (hash) {
-                        setTxHash(hash);
-                      }
-                    },
-                  });
-                  const recorded = await api.recordRelease({
-                    order_id: order.id,
-                    tx_hash: release.hash,
-                    attestation_nonce: releaseIntent.attestation.nonce,
-                    submitted_wallet: release.submittedWallet,
-                  });
-                  setTxStage(recorded.chain_status === "confirmed" ? "Confirmed" : "Confirming");
-                  setTxHash(release.hash);
-                  await refresh();
-                })
-                .catch((nextError) => {
-                  setTxStage("Failed");
-                  setTxError(nextError instanceof Error ? nextError.message : "Release failed.");
-                })
-                .finally(() => setBusy(false));
-            }}
-            type="button"
-          >
-            Relay release with Freighter
-          </button>
-          <button
-            className="btn-secondary px-4 py-2"
-            onClick={() => {
-              setRefundInfo(null);
-              void api
-                .createRefundIntent(order.id)
-                .then((intent) => {
-                  setRefundInfo(`Refund eligible by ${intent.eligibility_basis} since ${formatDateTime(intent.eligible_at)}.`);
-                })
-                .catch((nextError) => {
-                  setRefundInfo(nextError instanceof Error ? nextError.message : "Refund intent failed.");
-                });
-            }}
-            type="button"
-          >
-            Check refund availability
-          </button>
-          <button
-            className="btn-secondary px-4 py-2"
-            onClick={() => {
-              setDisputeMessage(null);
-              void api
-                .createDispute({
-                  order_id: order.id,
-                  reason_code: "frontend_request",
-                  description: "Dispute opened from the new frontend detail screen.",
-                })
-                .then((result) => {
-                  setDisputeMessage(`Dispute ${result.dispute_id} is now ${result.dispute_status}.`);
-                  void refresh();
-                })
-                .catch((nextError) => {
-                  setDisputeMessage(nextError instanceof Error ? nextError.message : "Dispute creation failed.");
-                });
-            }}
-            type="button"
-          >
-            Open dispute
-          </button>
-        </div>
-        {refundInfo ? <div className="surface-card p-4 text-sm text-ink/75">{refundInfo}</div> : null}
-        {disputeMessage ? <div className="surface-card p-4 text-sm text-ink/75">{disputeMessage}</div> : null}
-      </Card>
-      <TxProgressCard
-        error={txError}
-        helperText="Release only moves to confirmed here after backend records proven on-chain confirmation."
-        stage={txStage}
-        txHash={txHash}
+      <Breadcrumbs
+        items={[
+          audience === "seller"
+            ? { label: "Seller workspace", to: "/seller" }
+            : audience === "buyer"
+              ? { label: "Buyer workspace", to: "/buyer" }
+              : { label: "Compatibility order link" },
+          { label: detail.order.orderCode },
+        ]}
       />
-      <EventTimeline history={historyResponse.history} transactions={historyResponse.transactions} />
+
+      <WorkflowOrderDetailContent
+        actions={actions}
+        detail={detail}
+        detailSubtitle={subtitle}
+        detailTitle={detail.order.orderCode}
+      />
+
+      {issuedLink || message ? (
+        <Card title="Action Output" subtitle="New links are shown only at issuance time.">
+          {message ? <div className="surface-card p-4 text-sm text-ink/75">{message}</div> : null}
+          {issuedLink ? <input className="field-input font-mono text-xs" readOnly value={issuedLink} /> : null}
+        </Card>
+      ) : null}
     </div>
   );
+}
+
+function getSharedDetailRedirectPath(detail: SharedOrderDetailResponse) {
+  switch (detail.order.relation) {
+    case "seller_owner":
+      return `/seller/orders/${detail.order.orderId}`;
+    case "buyer_owner":
+      return `/buyer/orders/${detail.order.orderId}`;
+    case "rider_owner":
+      return `/rider/jobs/${detail.order.orderId}`;
+    case "operator":
+      return `/operator/reviews/${detail.order.orderId}`;
+    default:
+      return null;
+  }
 }

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Card } from "../components/Card";
 import { KeyValueList } from "../components/KeyValueList";
 import { useWallet } from "../hooks/useWallet";
-import { api } from "../lib/api";
+import { legacyApi } from "../lib/api";
 import { shortenAddress } from "../lib/format";
 import { useAppState } from "../providers/AppStateProvider";
 
@@ -24,9 +24,9 @@ export function BindWalletPage() {
         throw new Error("Switch Freighter to the configured network before binding your wallet.");
       }
 
-      const challenge = await api.createWalletChallenge(address);
+      const challenge = await legacyApi.createWalletChallenge(address);
       const signature = await wallet.signMessage(challenge.message);
-      const verified = await api.verifyWalletChallenge({
+      const verified = await legacyApi.verifyWalletChallenge({
         challenge_id: challenge.challenge_id,
         wallet_address: address,
         signature,

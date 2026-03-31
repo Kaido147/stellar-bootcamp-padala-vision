@@ -3,6 +3,7 @@ import { RoleEntryButton } from "../components/landing/RoleEntryButton";
 import { LandingSection } from "../components/landing/LandingSection";
 import { getRoleHomePath } from "../lib/roles";
 import { useAppState } from "../providers/AppStateProvider";
+import { useAuth } from "../providers/AuthProvider";
 
 const trustChips = ["On-chain escrow", "Proof-based verification", "Live order timeline"];
 
@@ -86,6 +87,8 @@ const roleFeaturePanels = [
 export function LandingPage() {
   const navigate = useNavigate();
   const { selectedRole } = useAppState();
+  const { actor } = useAuth();
+  const currentRole = actor?.role ?? selectedRole;
 
   return (
     <div className="min-h-screen px-4 py-5 sm:px-6 sm:py-6">
@@ -98,13 +101,13 @@ export function LandingPage() {
               <div className="mt-2 text-sm text-ink/60">Verified delivery escrow for real orders, proof, and release.</div>
             </div>
             <div className="flex flex-wrap items-center gap-3">
-              {selectedRole ? (
+              {currentRole ? (
                 <button
                   className="btn-primary"
-                  onClick={() => navigate(getRoleHomePath(selectedRole))}
+                  onClick={() => navigate(actor?.role === currentRole ? getRoleHomePath(currentRole) : `/enter/${currentRole}`)}
                   type="button"
                 >
-                  Continue as {selectedRole.charAt(0).toUpperCase() + selectedRole.slice(1)}
+                  Continue as {currentRole.charAt(0).toUpperCase() + currentRole.slice(1)}
                 </button>
               ) : null}
               <a className="btn-secondary" href="#how-it-works">
@@ -130,13 +133,13 @@ export function LandingPage() {
               </p>
 
               <div className="mt-7 flex flex-wrap items-center gap-3">
-                {selectedRole ? (
+                {currentRole ? (
                   <button
                     className="btn-primary"
-                    onClick={() => navigate(getRoleHomePath(selectedRole))}
+                    onClick={() => navigate(actor?.role === currentRole ? getRoleHomePath(currentRole) : `/enter/${currentRole}`)}
                     type="button"
                   >
-                    Continue in {selectedRole.charAt(0).toUpperCase() + selectedRole.slice(1)} workspace
+                    Continue in {currentRole.charAt(0).toUpperCase() + currentRole.slice(1)} workspace
                   </button>
                 ) : null}
                 <a className="btn-secondary" href="#how-it-works">
@@ -150,6 +153,9 @@ export function LandingPage() {
                   <RoleEntryButton density="compact" role="seller" variant="secondary" />
                   <RoleEntryButton density="compact" role="rider" variant="secondary" />
                   <RoleEntryButton density="compact" role="buyer" variant="secondary" />
+                </div>
+                <div className="mt-3">
+                  <RoleEntryButton density="compact" role="operator" variant="secondary" />
                 </div>
               </div>
 
@@ -339,13 +345,13 @@ export function LandingPage() {
               <Link className="btn-secondary" to="/settings/network">
                 Open Network Setup
               </Link>
-              {selectedRole ? (
+              {currentRole ? (
                 <button
                   className="btn-primary"
-                  onClick={() => navigate(getRoleHomePath(selectedRole))}
+                  onClick={() => navigate(actor?.role === currentRole ? getRoleHomePath(currentRole) : `/enter/${currentRole}`)}
                   type="button"
                 >
-                  Continue as {selectedRole.charAt(0).toUpperCase() + selectedRole.slice(1)}
+                  Continue as {currentRole.charAt(0).toUpperCase() + currentRole.slice(1)}
                 </button>
               ) : null}
             </div>

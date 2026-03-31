@@ -21,6 +21,8 @@ const envSchema = z.object({
   ORACLE_CONFIDENCE_THRESHOLD: z.coerce.number().default(0.8),
   WALLET_CHALLENGE_TTL_SECONDS: z.coerce.number().int().positive().default(300),
   ATTESTATION_TTL_SECONDS: z.coerce.number().int().positive().default(900),
+  ACTOR_SESSION_COOKIE_NAME: z.string().default("padala_actor_session"),
+  ACTOR_SESSION_HMAC_SECRET: z.string().default("development-actor-session-secret"),
 });
 
 export const env = envSchema.parse(process.env);

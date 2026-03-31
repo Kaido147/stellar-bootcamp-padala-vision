@@ -157,6 +157,61 @@ test("idempotency scope is isolated by authorization header", async () => {
   assert.equal(secondJson.user_id, "token-b");
 });
 
+test("wallet challenge route is exempt from idempotency key requirement", async () => {
+  const app = buildApp({
+    auth: createAuthSessionMiddleware({
+      resolveSessionActor: async () => ({
+        userId: "user-1",
+        email: "user@example.com",
+        phone: null,
+        accessToken: "valid-token",
+        roles: [],
+      }),
+    }),
+  });
+
+  const response = await issueRequest(app, "/api/auth/wallet/challenge", {
+    method: "POST",
+    headers: {
+      Authorization: "Bearer valid-token",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ wallet_address: "GABC" }),
+  });
+  const body = await response.json();
+
+  assert.equal(response.status, 201);
+  assert.equal(body.ok, true);
+  assert.equal(body.route, "challenge");
+});
+
+test("wallet verify route still requires idempotency key", async () => {
+  const app = buildApp({
+    auth: createAuthSessionMiddleware({
+      resolveSessionActor: async () => ({
+        userId: "user-1",
+        email: "user@example.com",
+        phone: null,
+        accessToken: "valid-token",
+        roles: [],
+      }),
+    }),
+  });
+
+  const response = await issueRequest(app, "/api/auth/wallet/verify", {
+    method: "POST",
+    headers: {
+      Authorization: "Bearer valid-token",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ challenge_id: "challenge-1" }),
+  });
+  const body = await response.json();
+
+  assert.equal(response.status, 400);
+  assert.equal(body.error, "Idempotency-Key header is required");
+});
+
 test("auth middleware rejects missing bearer token", async () => {
   const app = buildApp({
     auth: createAuthSessionMiddleware({
@@ -215,6 +270,14 @@ function buildApp(input: { auth: express.RequestHandler }) {
       body: req.body,
       user_id: actor.userId,
     });
+  });
+
+  app.post("/api/auth/wallet/challenge", (_req, res) => {
+    res.status(201).json({ ok: true, route: "challenge" });
+  });
+
+  app.post("/api/auth/wallet/verify", (_req, res) => {
+    res.status(200).json({ ok: true, route: "verify" });
   });
 
   app.use(errorHandler);

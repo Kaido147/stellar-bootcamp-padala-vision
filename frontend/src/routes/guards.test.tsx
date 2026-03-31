@@ -1,25 +1,29 @@
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { RoleGuard } from "./RoleGuard";
 
-vi.mock("../providers/AppStateProvider", () => ({
-  useAppState: vi.fn(),
+vi.mock("../providers/AuthProvider", () => ({
+  useAuth: vi.fn(),
 }));
 
-import { useAppState } from "../providers/AppStateProvider";
+import { useAuth } from "../providers/AuthProvider";
 
 describe("route guards", () => {
-  it("redirects to landing when no role is selected", () => {
-    vi.mocked(useAppState).mockReturnValue({
-      selectedRole: null,
-      getDefaultPath: () => "/",
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("redirects to seller entry when no actor session exists", () => {
+    vi.mocked(useAuth).mockReturnValue({
+      authReady: true,
+      actor: null,
     } as never);
 
     render(
       <MemoryRouter initialEntries={["/seller/orders/new"]}>
         <Routes>
-          <Route path="/" element={<div>landing page</div>} />
+          <Route path="/enter/seller" element={<div>seller entry</div>} />
           <Route
             path="/seller/orders/new"
             element={
@@ -32,13 +36,13 @@ describe("route guards", () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByText("landing page")).toBeInTheDocument();
+    expect(screen.getByText("seller entry")).toBeInTheDocument();
   });
 
   it("blocks users without the required role", () => {
-    vi.mocked(useAppState).mockReturnValue({
-      selectedRole: "buyer",
-      getDefaultPath: () => "/buyer",
+    vi.mocked(useAuth).mockReturnValue({
+      authReady: true,
+      actor: { id: "buyer-1", role: "buyer", status: "active", displayName: "Buyer" },
     } as never);
 
     render(

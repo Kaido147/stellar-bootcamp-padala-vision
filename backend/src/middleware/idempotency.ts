@@ -6,6 +6,7 @@ import { CORRELATION_ID_HEADER, getCorrelationId } from "./correlation-id.js";
 
 const IDEMPOTENCY_HEADER = "Idempotency-Key";
 const IDEMPOTENT_METHODS = new Set(["POST"]);
+const IDEMPOTENCY_EXEMPT_PATHS = new Set(["/api/auth/wallet/challenge"]);
 
 export async function idempotencyMiddleware(req: Request, res: Response, next: NextFunction) {
   if (!IDEMPOTENT_METHODS.has(req.method.toUpperCase())) {
@@ -16,12 +17,16 @@ export async function idempotencyMiddleware(req: Request, res: Response, next: N
     return next();
   }
 
+  const scopePath = `${req.baseUrl}${req.path}` || req.originalUrl;
+  if (IDEMPOTENCY_EXEMPT_PATHS.has(scopePath)) {
+    return next();
+  }
+
   const idempotencyKey = req.header(IDEMPOTENCY_HEADER)?.trim();
   if (!idempotencyKey) {
     return next(new HttpError(400, "Idempotency-Key header is required", "idempotency_required"));
   }
 
-  const scopePath = `${req.baseUrl}${req.path}` || req.originalUrl;
   const scopeKey = buildScopeKey(req.method, scopePath, idempotencyKey, getActorScope(req));
   const requestHash = hashRequest(req);
   const existing = await repository.claimIdempotencyRecord({

@@ -12,7 +12,7 @@ export function SettingsNetworkPage() {
     <Card title="Network Diagnostics" subtitle="Wallet, binding, and network checks before chain actions.">
       <KeyValueList
         items={[
-          { label: "Selected role", value: selectedRole ?? "No role selected yet" },
+          { label: "Current workspace role", value: selectedRole ?? "No role selected yet" },
           { label: "Wallet address", value: wallet.address ?? "Not connected" },
           { label: "Bound wallet", value: walletBinding?.wallet_address ?? "Not verified yet" },
           { label: "Current network", value: wallet.networkPassphrase ?? "Unknown" },

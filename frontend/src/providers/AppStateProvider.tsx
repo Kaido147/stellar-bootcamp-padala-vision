@@ -1,5 +1,6 @@
-import { createContext, useContext, useMemo, useState, type PropsWithChildren } from "react";
-import { getRoleHomePath, readStoredRole, ROLE_STORAGE_KEY, type AppRole } from "../lib/roles";
+import { createContext, useContext, useEffect, useMemo, useState, type PropsWithChildren } from "react";
+import { readStoredRole, ROLE_STORAGE_KEY, type AppRole } from "../lib/roles";
+import { useAuth } from "./AuthProvider";
 
 interface WalletBindingCache {
   wallet_address: string;
@@ -16,7 +17,6 @@ interface AppStateContextValue {
   clearRole: () => void;
   rememberWalletBinding: (binding: WalletBindingCache) => void;
   clearWalletBinding: () => void;
-  getDefaultPath: (roleOverride?: AppRole | null) => string;
 }
 
 const AppStateContext = createContext<AppStateContextValue | null>(null);
@@ -36,8 +36,20 @@ function readWalletBinding() {
 }
 
 export function AppStateProvider({ children }: PropsWithChildren) {
-  const [selectedRole, setSelectedRole] = useState<AppRole | null>(() => readStoredRole());
+  const { actor } = useAuth();
+  const [preferredRole, setPreferredRole] = useState<AppRole | null>(() => readStoredRole());
   const [walletBinding, setWalletBinding] = useState<WalletBindingCache | null>(() => readWalletBinding());
+
+  useEffect(() => {
+    if (!actor?.role) {
+      return;
+    }
+
+    setPreferredRole((current) => (current === actor.role ? current : actor.role));
+    window.localStorage.setItem(ROLE_STORAGE_KEY, actor.role);
+  }, [actor?.role]);
+
+  const selectedRole = actor?.role ?? preferredRole;
 
   const value = useMemo<AppStateContextValue>(
     () => ({
@@ -45,11 +57,11 @@ export function AppStateProvider({ children }: PropsWithChildren) {
       roles: selectedRole ? [selectedRole] : [],
       walletBinding,
       selectRole: (role) => {
-        setSelectedRole(role);
+        setPreferredRole(role);
         window.localStorage.setItem(ROLE_STORAGE_KEY, role);
       },
       clearRole: () => {
-        setSelectedRole(null);
+        setPreferredRole(null);
         window.localStorage.removeItem(ROLE_STORAGE_KEY);
       },
       rememberWalletBinding: (binding) => {
@@ -60,7 +72,6 @@ export function AppStateProvider({ children }: PropsWithChildren) {
         setWalletBinding(null);
         window.localStorage.removeItem(WALLET_STORAGE_KEY);
       },
-      getDefaultPath: (roleOverride) => getRoleHomePath(roleOverride ?? selectedRole),
     }),
     [selectedRole, walletBinding],
   );

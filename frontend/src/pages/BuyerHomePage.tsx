@@ -1,72 +1,86 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { Card } from "../components/Card";
-
-const buyerSignals = [
-  "Escrow funded once, then visible end to end",
-  "Proof upload and review state remain easy to audit",
-  "Dispute, refund, and release decisions stay attached to the order timeline",
-];
+import { LoadState } from "../components/LoadState";
+import { WorkflowOrderCard } from "../components/WorkflowOrderCard";
+import { WorkflowWorkspaceSection } from "../components/WorkflowWorkspaceSection";
+import { useAsyncData } from "../hooks/useAsyncData";
+import { workflowApi } from "../lib/api";
 
 export function BuyerHomePage() {
-  const navigate = useNavigate();
-  const [orderId, setOrderId] = useState("");
+  const { data, loading, error } = useAsyncData(() => workflowApi.listBuyerWorkflowOrders(), []);
+
+  if (!data) {
+    return <LoadState error={error} loading={loading} />;
+  }
 
   return (
     <div className="space-y-4">
-      <Card title="Buyer Workspace" subtitle="Enter an order to continue into the escrow and delivery timeline.">
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
-          <form
-            className="surface-card p-5"
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (!orderId.trim()) {
-                return;
-              }
-
-              navigate(`/buyer/orders/${orderId.trim()}`);
-            }}
-          >
-            <div className="section-kicker">Open Order</div>
-            <h3 className="mt-3 font-display text-2xl text-ink">Continue from a shared order link or known order ID.</h3>
-            <p className="mt-2 text-sm leading-6 text-ink/68">
-              Buyers enter once the seller has created the order. From there you can inspect totals, view proof state, and move into funding when the order is ready.
-            </p>
-            <label className="mt-5 block text-sm font-semibold text-ink">
-              Order ID
-              <input
-                className="field-input"
-                onChange={(event) => setOrderId(event.target.value)}
-                placeholder="Paste the order id"
-                value={orderId}
-              />
-            </label>
-            <div className="mt-4 flex flex-wrap gap-3">
-              <button className="btn-primary" disabled={!orderId.trim()} type="submit">
-                Open buyer order
-              </button>
-              <button
-                className="btn-secondary"
-                onClick={() => navigate("/settings/network")}
-                type="button"
-              >
-                Review network setup
-              </button>
-            </div>
-          </form>
-
-          <div className="surface-card p-5">
-            <div className="section-kicker">Buyer Visibility</div>
-            <div className="mt-3 space-y-3">
-              {buyerSignals.map((signal) => (
-                <div key={signal} className="rounded-2xl border border-line bg-night/80 px-4 py-4 text-sm text-ink/80">
-                  {signal}
-                </div>
-              ))}
-            </div>
-          </div>
+      <Card subtitle="Buyer rediscovery now comes from your workspace orders, not from manually entering an order ID." title="Buyer Workspace">
+        <div className="grid gap-3 sm:grid-cols-4">
+          <SummaryChip label="To fund" value={String(data.toFund.length)} />
+          <SummaryChip label="In progress" value={String(data.inProgress.length)} />
+          <SummaryChip label="Needs confirmation" value={String(data.needsYourConfirmation.length)} />
+          <SummaryChip label="Closed" value={String(data.closed.length)} />
         </div>
       </Card>
+
+      <WorkflowWorkspaceSection empty="No buyer orders need funding right now." subtitle="These orders are waiting for you to fund escrow." title="To Fund">
+        {data.toFund.map((order) => (
+          <WorkflowOrderCard
+            counterpartLabel={`Seller: ${order.sellerDisplayName}`}
+            extraAction={
+              <Link className="btn-primary px-4 py-2" to={`/buyer/orders/${order.orderId}/fund`}>
+                Fund escrow
+              </Link>
+            }
+            href={`/buyer/orders/${order.orderId}`}
+            key={order.orderId}
+            order={order}
+          />
+        ))}
+      </WorkflowWorkspaceSection>
+
+      <WorkflowWorkspaceSection empty="No buyer orders are in progress." subtitle="Funded, assigned, in-transit, and operator-routed orders remain visible here." title="In Progress">
+        {data.inProgress.map((order) => (
+          <WorkflowOrderCard
+            counterpartLabel={`Seller: ${order.sellerDisplayName}`}
+            href={`/buyer/orders/${order.orderId}`}
+            key={order.orderId}
+            order={order}
+          />
+        ))}
+      </WorkflowWorkspaceSection>
+
+      <WorkflowWorkspaceSection empty="No orders are waiting for your delivery decision." subtitle="Open these orders to reissue a confirmation link or move into the confirmation route." title="Needs Your Confirmation">
+        {data.needsYourConfirmation.map((order) => (
+          <WorkflowOrderCard
+            counterpartLabel={`Seller: ${order.sellerDisplayName}`}
+            href={`/buyer/orders/${order.orderId}`}
+            key={order.orderId}
+            order={order}
+          />
+        ))}
+      </WorkflowWorkspaceSection>
+
+      <WorkflowWorkspaceSection empty="No buyer orders are closed yet." subtitle="Released, refunded, cancelled, and expired orders stay discoverable here." title="Closed">
+        {data.closed.map((order) => (
+          <WorkflowOrderCard
+            counterpartLabel={`Seller: ${order.sellerDisplayName}`}
+            href={`/buyer/orders/${order.orderId}`}
+            key={order.orderId}
+            order={order}
+          />
+        ))}
+      </WorkflowWorkspaceSection>
+    </div>
+  );
+}
+
+function SummaryChip({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="surface-card p-4">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-ink/42">{label}</div>
+      <div className="mt-2 font-display text-2xl text-ink">{value}</div>
     </div>
   );
 }

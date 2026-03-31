@@ -1,19 +1,26 @@
-import { Link, NavLink, Outlet } from "react-router-dom";
+import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { useWallet } from "../hooks/useWallet";
-import { getRoleLabel, roleOptions } from "../lib/roles";
+import { getRoleLabel, resolveActiveRole, roleOptions } from "../lib/roles";
+import { useAuth } from "../providers/AuthProvider";
 import { useAppState } from "../providers/AppStateProvider";
 import { NetworkMismatchBanner } from "./NetworkMismatchBanner";
 import { RoleSwitcher } from "./RoleSwitcher";
 import { WalletStatusBanner } from "./WalletStatusBanner";
 
 export function AppLayout() {
+  const location = useLocation();
+  const { actor, authError, logoutWorkflowSession } = useAuth();
   const { selectedRole, clearRole } = useAppState();
   const wallet = useWallet();
-  const selectedRoleOption = roleOptions.find((option) => option.value === selectedRole);
+  const activeRole = resolveActiveRole(location.pathname, actor?.role, selectedRole);
+  const workspaceRole = actor?.role ?? activeRole;
+  const activeRoleOption = roleOptions.find((option) => option.value === activeRole);
+  const workspaceRoleOption = roleOptions.find((option) => option.value === workspaceRole);
   const navItems = [
-    selectedRoleOption
-      ? { to: selectedRoleOption.homePath, label: `${selectedRoleOption.label} workspace` }
+    workspaceRoleOption
+      ? { to: workspaceRoleOption.homePath, label: `${workspaceRoleOption.label} workspace` }
       : null,
+    actor?.role === "seller" ? { to: "/seller/orders/new", label: "Create order" } : null,
     { to: "/bind-wallet", label: "Wallet binding" },
     { to: "/settings/network", label: "Network" },
   ].filter((item): item is { to: string; label: string } => Boolean(item));
@@ -33,10 +40,10 @@ export function AppLayout() {
                   </Link>
                 </div>
                 <h1 className="mt-3 font-display text-3xl text-ink sm:text-4xl">
-                  {selectedRole ? `${getRoleLabel(selectedRole)} workspace` : "Verified delivery escrow workspace"}
+                  {activeRole ? `${getRoleLabel(activeRole)} workspace` : "Verified delivery escrow workspace"}
                 </h1>
                 <p className="mt-2 max-w-3xl text-sm leading-6 text-ink/65">
-                  Enter directly by role, move through the real order routes, and only connect a wallet when the flow actually needs a chain or wallet-bound action.
+                  Move through actor-owned workspaces, confirmation links, and queue-driven detail pages without relying on raw order IDs.
                 </p>
               </div>
 
@@ -44,9 +51,24 @@ export function AppLayout() {
                 <RoleSwitcher />
                 <div className="flex flex-wrap items-center gap-3 text-sm text-ink/62">
                   <div className="rounded-full border border-line bg-night/85 px-4 py-2">
-                    {selectedRole ? `Current role: ${getRoleLabel(selectedRole)}` : "Choose a role at any time"}
+                    {actor
+                      ? `Signed in as ${actor.displayName} (${getRoleLabel(actor.role)})`
+                      : activeRole
+                        ? `Preferred role: ${getRoleLabel(activeRole)}`
+                        : "Choose a role at any time"}
                   </div>
-                  {selectedRole ? (
+                  {actor ? (
+                    <button
+                      className="btn-secondary px-4 py-2"
+                      onClick={() => {
+                        clearRole();
+                        void logoutWorkflowSession();
+                      }}
+                      type="button"
+                    >
+                      Log out
+                    </button>
+                  ) : activeRole ? (
                     <button className="btn-secondary px-4 py-2" onClick={() => clearRole()} type="button">
                       Clear role
                     </button>
@@ -59,7 +81,7 @@ export function AppLayout() {
               <div className="surface-card p-4">
                 <div className="text-xs font-semibold uppercase tracking-[0.18em] text-ink/45">Role mode</div>
                 <div className="mt-2 text-sm text-ink/82">
-                  {selectedRoleOption?.description ?? "No role is locked yet. Pick Seller, Rider, or Buyer to personalize access."}
+                  {activeRoleOption?.description ?? "No role is locked yet. Pick a workspace entry path to personalize access."}
                 </div>
               </div>
               <div className="surface-card p-4">
@@ -71,10 +93,16 @@ export function AppLayout() {
               <div className="surface-card p-4">
                 <div className="text-xs font-semibold uppercase tracking-[0.18em] text-ink/45">Workflow promise</div>
                 <div className="mt-2 text-sm text-ink/82">
-                  Escrow, proof, review, disputes, and release stay visible as one order timeline.
+                  Escrow, proof, review, disputes, and release stay visible as one order record with actor ownership.
                 </div>
               </div>
             </div>
+
+            {authError ? (
+              <div className="rounded-[1.5rem] border border-amber-200 bg-amber-50/90 px-4 py-4 text-sm text-amber-900">
+                {authError}
+              </div>
+            ) : null}
           </div>
         </header>
 
