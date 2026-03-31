@@ -4,6 +4,7 @@ import type { RiderJobDetailResponse, RiderCreateProofUploadResponse } from "@pa
 import { Breadcrumbs } from "../components/Breadcrumbs";
 import { Card } from "../components/Card";
 import { LoadState } from "../components/LoadState";
+import { ProofEvidenceCard } from "../components/ProofEvidenceCard";
 import { WorkflowOrderDetailContent } from "../components/WorkflowOrderDetailContent";
 import { workflowApi } from "../lib/api";
 
@@ -16,6 +17,22 @@ export function RiderJobPage() {
   const [proofFile, setProofFile] = useState<File | null>(null);
   const [uploadResult, setUploadResult] = useState<RiderCreateProofUploadResponse | null>(null);
   const [proofNote, setProofNote] = useState("");
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [submittedProof, setSubmittedProof] = useState<RiderJobDetailResponse["latestProof"] | null>(null);
+
+  useEffect(() => {
+    if (!proofFile) {
+      setPreviewUrl(null);
+      return;
+    }
+
+    const objectUrl = URL.createObjectURL(proofFile);
+    setPreviewUrl(objectUrl);
+
+    return () => {
+      URL.revokeObjectURL(objectUrl);
+    };
+  }, [proofFile]);
 
   useEffect(() => {
     if (!id) {
@@ -139,7 +156,7 @@ export function RiderJobPage() {
                 .uploadRiderProofFile(id, proofFile)
                 .then((response) => {
                   setUploadResult(response);
-                  setMessage("Proof image uploaded. You can now submit the proof.");
+                  setMessage("Proof image uploaded and previewed below. Submit it to run Gemini proof analysis.");
                 })
                 .catch((nextError) => {
                   setMessage(nextError instanceof Error ? nextError.message : "Could not upload proof.");
@@ -162,14 +179,17 @@ export function RiderJobPage() {
                 .submitRiderProof(id, {
                   imageUrl: uploadResult.uploadUrl,
                   storagePath: uploadResult.storagePath,
+                  fileHash: uploadResult.fileHash ?? null,
+                  contentType: uploadResult.contentType ?? proofFile?.type ?? null,
                   note: proofNote.trim() || null,
                   submittedAt: new Date().toISOString(),
                 })
                 .then(async (response) => {
+                  setSubmittedProof(response.latestProof ?? null);
                   setMessage(
                     response.manualReviewRequired
-                      ? "Proof submitted and routed to manual review."
-                      : "Proof submitted and buyer confirmation has been issued.",
+                      ? "Proof submitted, the image was analyzed, and the order was routed to manual review."
+                      : "Proof submitted, Gemini analysis is attached below, and buyer confirmation has been issued.",
                   );
                   await refresh();
                 })
@@ -186,9 +206,25 @@ export function RiderJobPage() {
           </Link>
         </div>
 
+        {previewUrl ? (
+          <ProofEvidenceCard
+            proof={{
+              imageUrl: previewUrl,
+              storagePath: uploadResult?.storagePath ?? null,
+              fileHash: uploadResult?.fileHash ?? null,
+              contentType: uploadResult?.contentType ?? proofFile?.type ?? null,
+              submittedAt: new Date().toISOString(),
+              note: proofNote.trim() || null,
+              analysis: submittedProof?.analysis ?? null,
+            }}
+            summary={submittedProof?.analysis?.summary ?? "Preview the uploaded image here before you submit it into the workflow."}
+          />
+        ) : null}
+
+        {submittedProof ? <ProofEvidenceCard proof={submittedProof} summary={submittedProof.analysis?.summary ?? null} /> : null}
         {uploadResult ? (
           <div className="surface-card p-4 text-sm text-ink/64">
-            Uploaded proof expires at {uploadResult.expiresAt}.
+            Uploaded proof expires at {uploadResult.expiresAt}. The direct proof asset link remains available from the evidence card.
           </div>
         ) : null}
         {message ? <div className="surface-card p-4 text-sm text-ink/75">{message}</div> : null}

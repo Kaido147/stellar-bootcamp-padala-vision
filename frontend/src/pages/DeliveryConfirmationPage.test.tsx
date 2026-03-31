@@ -49,6 +49,23 @@ describe("DeliveryConfirmationPage", () => {
       proofSubmittedAt: "2026-03-31T00:00:00.000Z",
       confirmationExpiresAt: "2026-04-01T00:00:00.000Z",
       requiresPin: true,
+      latestProof: {
+        imageUrl: "https://example.test/proof.jpg",
+        storagePath: "proofs/order-1.jpg",
+        fileHash: "hash-123",
+        contentType: "image/jpeg",
+        submittedAt: "2026-03-31T00:00:00.000Z",
+        note: "Front desk handoff",
+        analysis: {
+          analysisStatus: "available",
+          summary: "The image appears to show the package at the front desk.",
+          qualityAssessment: "clear",
+          confidenceLabel: "high",
+          riskFlags: ["RECIPIENT_NOT_VISIBLE"],
+          operatorNotes: "The package is visible, but the recipient is not clearly shown.",
+          decisionSuggestion: "Review the image and confirm only if it matches your delivery.",
+        },
+      },
     });
   });
 
@@ -67,6 +84,7 @@ describe("DeliveryConfirmationPage", () => {
       </MemoryRouter>,
     );
 
+    expect(await screen.findByText(/The image appears to show the package at the front desk/i)).toBeInTheDocument();
     fireEvent.change(await screen.findByLabelText(/Confirmation PIN/i), { target: { value: "123456" } });
     fireEvent.click(screen.getByRole("button", { name: /Approve delivery/i }));
 

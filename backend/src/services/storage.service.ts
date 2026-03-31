@@ -69,6 +69,31 @@ export class StorageService {
       contentType: input.contentType,
     };
   }
+
+  async getEvidenceRenderUrl(storagePath: string): Promise<string | null> {
+    const normalizedPath = storagePath.trim();
+    if (!normalizedPath) {
+      return null;
+    }
+
+    if (normalizedPath.startsWith("memory/")) {
+      return `https://memory.invalid/${normalizedPath}`;
+    }
+
+    const client = getSupabaseAdminClient();
+    if (!client) {
+      return null;
+    }
+
+    await ensureBucket(client);
+
+    const { data, error } = await client.storage.from(env.SUPABASE_STORAGE_BUCKET).createSignedUrl(normalizedPath, 60 * 60);
+    if (error || !data?.signedUrl) {
+      return null;
+    }
+
+    return data.signedUrl;
+  }
 }
 
 async function ensureBucket(client: NonNullable<ReturnType<typeof getSupabaseAdminClient>>) {

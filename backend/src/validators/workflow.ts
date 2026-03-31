@@ -38,6 +38,7 @@ export const riderSubmitProofSchema = z.object({
   imageUrl: z.string().url(),
   storagePath: z.string().min(1).optional().nullable(),
   fileHash: z.string().min(1).optional().nullable(),
+  contentType: z.string().min(1).optional().nullable(),
   note: z.string().optional().nullable(),
   submittedAt: z.string().datetime(),
 });

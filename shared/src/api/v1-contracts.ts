@@ -41,12 +41,27 @@ export interface OrderTimelineEntry {
   metadata: Record<string, unknown>;
 }
 
+export type ProofAnalysisQuality = "clear" | "blurry" | "dark" | "low_confidence" | "analysis_unavailable";
+export type ProofAnalysisConfidence = "high" | "medium" | "low" | "unavailable";
+
+export interface ProofAnalysisResult {
+  analysisStatus: "available" | "unavailable";
+  summary: string | null;
+  qualityAssessment: ProofAnalysisQuality;
+  confidenceLabel: ProofAnalysisConfidence;
+  riskFlags: string[];
+  operatorNotes: string | null;
+  decisionSuggestion?: string | null;
+}
+
 export interface OrderProofArtifact {
   imageUrl: string | null;
   storagePath: string | null;
   fileHash: string | null;
+  contentType?: string | null;
   submittedAt: string;
   note: string | null;
+  analysis?: ProofAnalysisResult | null;
 }
 
 export interface OrderDetailParticipantView extends MonetaryAmountSummary {
@@ -229,12 +244,15 @@ export interface RiderCreateProofUploadResponse {
   uploadUrl: string;
   storagePath: string;
   expiresAt: string;
+  fileHash?: string | null;
+  contentType?: string | null;
 }
 
 export interface RiderSubmitProofRequest {
   imageUrl: string;
   storagePath?: string | null;
   fileHash?: string | null;
+  contentType?: string | null;
   note?: string | null;
   submittedAt: string;
 }
@@ -244,6 +262,7 @@ export interface RiderSubmitProofResponse {
   status: Extract<DurableOrderStatus, "awaiting_buyer_confirmation" | "manual_review">;
   confirmationIssued: boolean;
   manualReviewRequired: boolean;
+  latestProof?: OrderProofArtifact | null;
 }
 
 export interface DeliveryConfirmationViewResponse extends MonetaryAmountSummary {

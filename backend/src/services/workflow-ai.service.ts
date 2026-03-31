@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { OrderTimelineEntry } from "@padala-vision/shared";
+import type { OrderTimelineEntry, ProofAnalysisResult } from "@padala-vision/shared";
 import { env } from "../config/env.js";
 import type { WorkflowOrderRecord } from "../lib/foundation-repository.js";
 import type { DisputeRecord } from "../lib/repository.js";
@@ -8,6 +8,9 @@ const workflowAiSchema = z.object({
   summary: z.string().trim().min(1),
   risk_flags: z.array(z.string().trim().min(1)).max(6),
   decision_suggestion: z.string().trim().min(1),
+  quality_assessment: z.enum(["clear", "blurry", "dark", "low_confidence"]),
+  confidence_label: z.enum(["high", "medium", "low"]),
+  operator_notes: z.string().trim().min(1),
 });
 
 const workflowAiResponseSchema = {
@@ -19,14 +22,27 @@ const workflowAiResponseSchema = {
       items: { type: "STRING" },
     },
     decision_suggestion: { type: "STRING" },
+    quality_assessment: {
+      type: "STRING",
+      enum: ["clear", "blurry", "dark", "low_confidence"],
+    },
+    confidence_label: {
+      type: "STRING",
+      enum: ["high", "medium", "low"],
+    },
+    operator_notes: { type: "STRING" },
   },
-  required: ["summary", "risk_flags", "decision_suggestion"],
+  required: ["summary", "risk_flags", "decision_suggestion", "quality_assessment", "confidence_label", "operator_notes"],
 } as const;
 
 export interface WorkflowAiAdvice {
   summary: string;
   riskFlags: string[];
   decisionSuggestion: string;
+}
+
+export interface WorkflowProofAdvice extends ProofAnalysisResult {
+  decisionSuggestion: string | null;
 }
 
 export class WorkflowAiService {
@@ -111,13 +127,61 @@ export class WorkflowAiService {
     }
   }
 
+  async analyzeProof(input: {
+    order: WorkflowOrderRecord;
+    timeline: OrderTimelineEntry[];
+    proof: {
+      imageUrl: string | null;
+      storagePath: string | null;
+      fileHash: string | null;
+      contentType: string | null;
+      submittedAt: string;
+      note: string | null;
+    };
+  }): Promise<WorkflowProofAdvice> {
+    const preview = buildFallbackProofAdvice(input.order, input.proof);
+
+    if (!env.GEMINI_API_KEY) {
+      return preview;
+    }
+
+    try {
+      const gemini = await this.requestGeminiAdvice({
+        title: "Delivery proof analysis",
+        order: input.order,
+        timeline: input.timeline,
+        dispute: null,
+        proof: input.proof,
+      });
+
+      return {
+        analysisStatus: "available",
+        summary: gemini.summary || preview.summary,
+        qualityAssessment: gemini.qualityAssessment,
+        confidenceLabel: gemini.confidenceLabel,
+        riskFlags: gemini.riskFlags.length > 0 ? gemini.riskFlags : preview.riskFlags,
+        operatorNotes: gemini.operatorNotes || preview.operatorNotes,
+        decisionSuggestion: gemini.decisionSuggestion || preview.decisionSuggestion,
+      };
+    } catch {
+      return preview;
+    }
+  }
+
   private async requestGeminiAdvice(input: {
     title: string;
     order: WorkflowOrderRecord;
     timeline: OrderTimelineEntry[];
     dispute: DisputeRecord | null;
     proof: ReturnType<typeof getLatestProof>;
-  }): Promise<WorkflowAiAdvice> {
+  }): Promise<{
+    summary: string;
+    riskFlags: string[];
+    decisionSuggestion: string;
+    qualityAssessment: WorkflowProofAdvice["qualityAssessment"];
+    confidenceLabel: WorkflowProofAdvice["confidenceLabel"];
+    operatorNotes: string;
+  }> {
     const parts: Array<Record<string, unknown>> = [
       {
         text: [
@@ -133,6 +197,7 @@ export class WorkflowAiService {
           `Latest proof note: ${input.proof?.note ?? "none"}.`,
           `Latest proof storage path: ${input.proof?.storagePath ?? "none"}.`,
           `Latest proof file hash: ${input.proof?.fileHash ?? "none"}.`,
+          `Latest proof content type: ${input.proof?.contentType ?? "unknown"}.`,
           input.dispute
             ? `Dispute context: reason=${input.dispute.reasonCode}; description=${input.dispute.description}; created_at=${input.dispute.createdAt}.`
             : "No dispute is currently open.",
@@ -228,6 +293,9 @@ export class WorkflowAiService {
       summary: parsed.summary,
       riskFlags: parsed.risk_flags,
       decisionSuggestion: parsed.decision_suggestion,
+      qualityAssessment: parsed.quality_assessment,
+      confidenceLabel: parsed.confidence_label,
+      operatorNotes: parsed.operator_notes,
     };
   }
 }
@@ -245,6 +313,7 @@ function getLatestProof(timeline: OrderTimelineEntry[]) {
     imageUrl: readString(latest.metadata.imageUrl),
     storagePath: readString(latest.metadata.storagePath),
     fileHash: readString(latest.metadata.fileHash),
+    contentType: readString(latest.metadata.contentType),
     submittedAt: latest.occurredAt,
     note: latest.note,
   };
@@ -307,6 +376,57 @@ function buildFallbackSummary(
   return `Latest proof for ${order.publicOrderCode} was submitted at ${proof.submittedAt}. Review the proof metadata and timeline before moving the workflow forward.`;
 }
 
+function buildFallbackProofAdvice(
+  order: WorkflowOrderRecord,
+  proof: {
+    imageUrl: string | null;
+    storagePath: string | null;
+    fileHash: string | null;
+    contentType: string | null;
+    submittedAt: string;
+    note: string | null;
+  },
+): WorkflowProofAdvice {
+  const riskFlags = new Set<string>();
+
+  if (!proof.storagePath) {
+    riskFlags.add("PROOF_STORAGE_REFERENCE_MISSING");
+  }
+
+  if (!proof.fileHash) {
+    riskFlags.add("PROOF_FILE_HASH_MISSING");
+  }
+
+  const note = proof.note?.toLowerCase() ?? "";
+  if (note.includes("manual_review")) {
+    riskFlags.add("RIDER_REQUESTED_MANUAL_REVIEW");
+  }
+
+  riskFlags.add("PROOF_ANALYSIS_UNAVAILABLE");
+
+  const derivedQuality = deriveFallbackQualityAssessment(proof);
+  if (derivedQuality === "dark") {
+    riskFlags.add("PROOF_VISIBILITY_LIMITED");
+  }
+  if (derivedQuality === "low_confidence") {
+    riskFlags.add("PROOF_RENDER_REVIEW_RECOMMENDED");
+  }
+
+  return {
+    analysisStatus: "unavailable",
+    summary: `Gemini analysis is currently unavailable for ${order.publicOrderCode}. Review the uploaded proof image directly before continuing.`,
+    qualityAssessment: "analysis_unavailable",
+    confidenceLabel: "unavailable",
+    riskFlags: [...riskFlags].slice(0, 6),
+    operatorNotes:
+      derivedQuality === "low_confidence"
+        ? "Automated analysis is unavailable and the available proof metadata suggests the image should be reviewed manually before accepting it as sufficient."
+        : "Automated analysis is unavailable. Review the rendered proof image together with the rider note and timeline before deciding whether the workflow can proceed.",
+    decisionSuggestion:
+      "Use the proof image as the primary evidence source. Escalate to manual review if the image is unclear, inconsistent, or missing expected handoff details.",
+  };
+}
+
 function buildDecisionSuggestion(
   status: WorkflowOrderRecord["workflowStatus"],
   dispute?: DisputeRecord | null,
@@ -339,4 +459,22 @@ function buildDecisionSuggestion(
 
 function readString(value: unknown) {
   return typeof value === "string" && value.trim() ? value : null;
+}
+
+function deriveFallbackQualityAssessment(proof: { note: string | null; contentType: string | null }) {
+  const note = proof.note?.toLowerCase() ?? "";
+
+  if (note.includes("blurry")) {
+    return "blurry" as const;
+  }
+
+  if (note.includes("dark") || note.includes("night")) {
+    return "dark" as const;
+  }
+
+  if (!proof.contentType?.startsWith("image/")) {
+    return "low_confidence" as const;
+  }
+
+  return "clear" as const;
 }

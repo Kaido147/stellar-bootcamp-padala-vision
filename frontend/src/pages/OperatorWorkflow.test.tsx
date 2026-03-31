@@ -113,8 +113,18 @@ describe("operator workflow pages", () => {
         imageUrl: "https://example.test/proof.jpg",
         storagePath: "proofs/order-2.jpg",
         fileHash: null,
+        contentType: "image/jpeg",
         submittedAt: "2026-03-31T00:00:00.000Z",
         note: "Front door handoff",
+        analysis: {
+          analysisStatus: "available",
+          summary: "The image appears to show a doorstep handoff with the parcel visible.",
+          qualityAssessment: "clear",
+          confidenceLabel: "medium",
+          riskFlags: ["RECIPIENT_NOT_VISIBLE"],
+          operatorNotes: "The parcel is visible, but the receiving person is not fully visible in frame.",
+          decisionSuggestion: "Compare the image against the dispute claim before resolving.",
+        },
       },
     });
     vi.mocked(workflowApi.resolveOperatorDispute).mockResolvedValue({
@@ -132,6 +142,7 @@ describe("operator workflow pages", () => {
     );
 
     fireEvent.change(await screen.findByLabelText(/Note/i), { target: { value: "Resolve to release" } });
+    expect(screen.getByText(/The image appears to show a doorstep handoff with the parcel visible/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Submit resolution/i }));
 
     expect(await screen.findByText(/Order moved to release_pending/i)).toBeInTheDocument();

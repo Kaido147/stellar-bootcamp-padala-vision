@@ -8,6 +8,7 @@ import { authSessionMiddleware } from "./middleware/auth.js";
 import { OracleService } from "./services/oracle.service.js";
 import { apiRouter } from "./routes/index.js";
 import { errorHandler } from "./middleware/error-handler.js";
+import { runtimeCapabilities } from "./config/env.js";
 
 export function createApp() {
   const app = express();
@@ -26,7 +27,12 @@ export function createApp() {
   app.use("/api", authSessionMiddleware);
 
   app.get("/health", (_req, res) => {
-    res.json({ ok: true, repository: repository.mode, oracle: oracleService.getProviderMode() });
+    res.json({
+      ok: true,
+      repository: repository.mode,
+      oracle: oracleService.getProviderMode(),
+      geminiProofAnalysisEnabled: runtimeCapabilities.geminiProofAnalysisEnabled,
+    });
   });
 
   app.use("/api", apiRouter);

@@ -1,7 +1,16 @@
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { config } from "dotenv";
 import { z } from "zod";
 
-config();
+const currentFilePath = fileURLToPath(import.meta.url);
+const currentDirPath = dirname(currentFilePath);
+export const backendEnvPath = resolve(currentDirPath, "../../.env");
+
+config({
+  path: backendEnvPath,
+  override: false,
+});
 
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -26,3 +35,7 @@ const envSchema = z.object({
 });
 
 export const env = envSchema.parse(process.env);
+
+export const runtimeCapabilities = {
+  geminiProofAnalysisEnabled: Boolean(env.GEMINI_API_KEY),
+} as const;

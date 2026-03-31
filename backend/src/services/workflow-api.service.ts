@@ -25,6 +25,7 @@ import type {
   OperatorReissueConfirmationResponse,
   OrderDetailEnvelope,
   OrderDetailParticipantView,
+  OrderProofArtifact,
   OrderTimelineEntry,
   RejectDeliveryConfirmationRequest,
   RejectDeliveryConfirmationResponse,
@@ -504,6 +505,8 @@ export class WorkflowApiService {
       uploadUrl: result.signedUrl,
       storagePath: result.storagePath,
       expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+      fileHash: result.fileHash,
+      contentType: result.contentType,
     };
   }
 
@@ -514,6 +517,44 @@ export class WorkflowApiService {
       throw new HttpError(404, "Workflow order not found", "workflow_order_forbidden");
     }
 
+    const timeline = (await foundationRepository.listOrderTimelineEvents(orderId)).map(toTimelineEntry);
+    const proofArtifact = (await this.hydrateProofArtifact({
+      imageUrl: input.imageUrl,
+      storagePath: input.storagePath ?? null,
+      fileHash: input.fileHash ?? null,
+      contentType: input.contentType ?? null,
+      submittedAt: input.submittedAt,
+      note: input.note ?? null,
+      analysis: null,
+    })) ?? {
+      imageUrl: input.imageUrl,
+      storagePath: input.storagePath ?? null,
+      fileHash: input.fileHash ?? null,
+      contentType: input.contentType ?? null,
+      submittedAt: input.submittedAt,
+      note: input.note ?? null,
+      analysis: null,
+    };
+    const proofAnalysis = await this.ai.analyzeProof({
+      order,
+      timeline,
+      proof: {
+        imageUrl: proofArtifact.imageUrl,
+        storagePath: proofArtifact.storagePath,
+        fileHash: proofArtifact.fileHash,
+        contentType: proofArtifact.contentType ?? null,
+        submittedAt: proofArtifact.submittedAt,
+        note: proofArtifact.note,
+      },
+    });
+    const proofMetadata = buildProofMetadata({
+      imageUrl: proofArtifact.imageUrl,
+      storagePath: proofArtifact.storagePath,
+      fileHash: proofArtifact.fileHash,
+      contentType: proofArtifact.contentType ?? null,
+      analysis: proofAnalysis,
+    });
+
     await foundationRepository.createOrderTimelineEvent({
       orderId,
       type: "proof_uploaded",
@@ -521,11 +562,7 @@ export class WorkflowApiService {
       actorRole: actor.role,
       note: input.note ?? "Rider uploaded proof metadata",
       occurredAt: input.submittedAt,
-      metadata: {
-        imageUrl: input.imageUrl,
-        storagePath: input.storagePath ?? null,
-        fileHash: input.fileHash ?? null,
-      },
+      metadata: proofMetadata,
     });
 
     if (input.note?.includes("manual_review")) {
@@ -540,6 +577,10 @@ export class WorkflowApiService {
         status: "manual_review",
         confirmationIssued: false,
         manualReviewRequired: true,
+        latestProof: {
+          ...proofArtifact,
+          analysis: proofAnalysis,
+        },
       };
     }
 
@@ -554,11 +595,7 @@ export class WorkflowApiService {
         buyerConfirmationDueAt: dueAt,
         deliveredAt: input.submittedAt,
       },
-      metadata: {
-        imageUrl: input.imageUrl,
-        storagePath: input.storagePath ?? null,
-        fileHash: input.fileHash ?? null,
-      },
+      metadata: proofMetadata,
     });
 
     await this.issueDeliveryConfirmation(await requireWorkflowOrder(orderId), actor.actorId);
@@ -568,6 +605,10 @@ export class WorkflowApiService {
       status: "awaiting_buyer_confirmation",
       confirmationIssued: true,
       manualReviewRequired: false,
+      latestProof: {
+        ...proofArtifact,
+        analysis: proofAnalysis,
+      },
     };
   }
 
@@ -584,7 +625,7 @@ export class WorkflowApiService {
 
     const actors = await this.getParticipantActors(order);
     const timeline = (await foundationRepository.listOrderTimelineEvents(order.id)).map(toTimelineEntry);
-    const latestProof = extractLatestProof(timeline);
+    const latestProof = await this.hydrateLatestProof(timeline);
     const advice = await this.ai.buildConfirmationAdvice({
       order,
       timeline,
@@ -963,7 +1004,7 @@ export class WorkflowApiService {
       availableActions: getTransitionsFrom(order.workflowStatus)
         .filter((transition) => transition.allowedRoles.some((allowedRole) => allowedRole === actor.role))
         .map((transition) => transition.action),
-      latestProof: extractLatestProof(timelineEntries),
+      latestProof: await this.hydrateLatestProof(timelineEntries),
     };
   }
 
@@ -1039,6 +1080,26 @@ export class WorkflowApiService {
     const actors = await foundationRepository.getActorsByIds(actorIds);
     return new Map<string, ActorSummary>(actors.map((actor) => [actor.id, toPublicActorSummary(actor)]));
   }
+
+  private async hydrateLatestProof(timeline: OrderTimelineEntry[]) {
+    const latest = extractLatestProof(timeline);
+    return this.hydrateProofArtifact(latest);
+  }
+
+  private async hydrateProofArtifact(proof: OrderProofArtifact | null): Promise<OrderProofArtifact | null> {
+    if (!proof) {
+      return null;
+    }
+
+    const renderUrl = proof.storagePath
+      ? await this.storage.getEvidenceRenderUrl(proof.storagePath)
+      : proof.imageUrl;
+
+    return {
+      ...proof,
+      imageUrl: renderUrl ?? proof.imageUrl,
+    };
+  }
 }
 
 function toSessionView(
@@ -1105,8 +1166,67 @@ function extractLatestProof(timeline: OrderTimelineEntry[]) {
     imageUrl: readMetadataString(latest.metadata.imageUrl),
     storagePath: readMetadataString(latest.metadata.storagePath),
     fileHash: readMetadataString(latest.metadata.fileHash),
+    contentType: readMetadataString(latest.metadata.contentType),
     submittedAt: latest.occurredAt,
     note: latest.note,
+    analysis: extractProofAnalysis(latest.metadata),
+  };
+}
+
+function extractProofAnalysis(metadata: Record<string, unknown>) {
+  const analysisStatus = readMetadataString(metadata.analysisStatus);
+  const summary = readMetadataString(metadata.aiSummary);
+  const qualityAssessment = readMetadataString(metadata.aiQualityAssessment);
+  const confidenceLabel = readMetadataString(metadata.aiConfidenceLabel);
+  const operatorNotes = readMetadataString(metadata.aiOperatorNotes);
+  const decisionSuggestion = readMetadataString(metadata.aiDecisionSuggestion);
+  const riskFlags = Array.isArray(metadata.aiRiskFlags)
+    ? metadata.aiRiskFlags.filter((flag): flag is string => typeof flag === "string" && flag.trim().length > 0)
+    : [];
+
+  if (!analysisStatus && !summary && !qualityAssessment && !confidenceLabel && !operatorNotes && riskFlags.length === 0) {
+    return null;
+  }
+
+  return {
+    analysisStatus: analysisStatus === "available" ? "available" : "unavailable",
+    summary,
+    qualityAssessment:
+      qualityAssessment === "clear" ||
+      qualityAssessment === "blurry" ||
+      qualityAssessment === "dark" ||
+      qualityAssessment === "low_confidence"
+        ? qualityAssessment
+        : "analysis_unavailable",
+    confidenceLabel:
+      confidenceLabel === "high" || confidenceLabel === "medium" || confidenceLabel === "low"
+        ? confidenceLabel
+        : "unavailable",
+    riskFlags,
+    operatorNotes,
+    decisionSuggestion,
+  } satisfies NonNullable<OrderProofArtifact["analysis"]>;
+}
+
+function buildProofMetadata(input: {
+  imageUrl: string | null;
+  storagePath: string | null;
+  fileHash: string | null;
+  contentType: string | null;
+  analysis: NonNullable<OrderProofArtifact["analysis"]>;
+}) {
+  return {
+    imageUrl: input.imageUrl,
+    storagePath: input.storagePath,
+    fileHash: input.fileHash,
+    contentType: input.contentType,
+    analysisStatus: input.analysis.analysisStatus,
+    aiSummary: input.analysis.summary,
+    aiQualityAssessment: input.analysis.qualityAssessment,
+    aiConfidenceLabel: input.analysis.confidenceLabel,
+    aiRiskFlags: input.analysis.riskFlags,
+    aiOperatorNotes: input.analysis.operatorNotes,
+    aiDecisionSuggestion: input.analysis.decisionSuggestion ?? null,
   };
 }
 
