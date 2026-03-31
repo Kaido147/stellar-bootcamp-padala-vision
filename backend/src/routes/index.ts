@@ -9,7 +9,6 @@ import {
   getOrderHistory,
   listFundedJobs,
   markInTransit,
-  releaseEscrow,
   submitEvidence,
   uploadEvidenceFile,
   evidenceUploadMiddleware,
@@ -28,4 +27,3 @@ apiRouter.post("/orders/:id/in-transit", markInTransit);
 apiRouter.get("/jobs/funded", listFundedJobs);
 apiRouter.post("/evidence/upload", evidenceUploadMiddleware.single("file"), uploadEvidenceFile);
 apiRouter.post("/evidence/submit", submitEvidence);
-apiRouter.post("/release", releaseEscrow);

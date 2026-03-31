@@ -110,6 +110,22 @@ export interface ReleaseIntentRecord {
   createdAt: string;
 }
 
+export interface ReleaseRecord {
+  id: string;
+  releaseIntentId: string;
+  orderId: string;
+  txHash: string;
+  attestationNonce: string;
+  submittedWallet: string;
+  contractId: string;
+  status: "pending" | "confirmed" | "failed";
+  correlationId: string;
+  confirmedAt: string | null;
+  chainLedger: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Repository {
   readonly mode: "memory" | "supabase";
   generateOrderId(): string;
@@ -155,6 +171,14 @@ export interface Repository {
   clearContractRegistry(environment?: "staging" | "pilot"): Promise<void>;
   getActiveWalletBindingByUser(userId: string): Promise<WalletBindingRecord | null>;
   createReleaseIntent(input: Omit<ReleaseIntentRecord, "createdAt">): Promise<ReleaseIntentRecord>;
+  getReleaseIntentByNonce(orderId: string, attestationNonce: string): Promise<ReleaseIntentRecord | null>;
+  getTransactionByHash(txHash: string): Promise<TransactionRecord | null>;
+  getReleaseRecordByTxHash(txHash: string): Promise<ReleaseRecord | null>;
+  createReleaseRecord(input: Omit<ReleaseRecord, "id" | "createdAt" | "updatedAt">): Promise<ReleaseRecord>;
+  updateReleaseRecord(
+    id: string,
+    patch: Partial<Pick<ReleaseRecord, "status" | "confirmedAt" | "chainLedger" | "correlationId">>,
+  ): Promise<ReleaseRecord>;
 }
 
 export class InMemoryRepository implements Repository {
@@ -169,6 +193,7 @@ export class InMemoryRepository implements Repository {
   private walletBindings = new Map<string, WalletBindingRecord>();
   private contractRegistry = new Map<string, ContractRegistryRecord>();
   private releaseIntents = new Map<string, ReleaseIntentRecord>();
+  private releaseRecords = new Map<string, ReleaseRecord>();
   private nextOrderId = 1;
 
   generateOrderId(): string {
@@ -462,6 +487,54 @@ export class InMemoryRepository implements Repository {
     this.releaseIntents.set(record.id, record);
     return record;
   }
+
+  async getReleaseIntentByNonce(orderId: string, attestationNonce: string): Promise<ReleaseIntentRecord | null> {
+    return (
+      [...this.releaseIntents.values()].find(
+        (record) => record.orderId === orderId && record.attestationNonce === attestationNonce,
+      ) ?? null
+    );
+  }
+
+  async getTransactionByHash(txHash: string): Promise<TransactionRecord | null> {
+    return this.transactions.find((entry) => entry.txHash === txHash) ?? null;
+  }
+
+  async getReleaseRecordByTxHash(txHash: string): Promise<ReleaseRecord | null> {
+    return [...this.releaseRecords.values()].find((record) => record.txHash === txHash) ?? null;
+  }
+
+  async createReleaseRecord(input: Omit<ReleaseRecord, "id" | "createdAt" | "updatedAt">): Promise<ReleaseRecord> {
+    const now = new Date().toISOString();
+    const record: ReleaseRecord = {
+      ...input,
+      id: uuid(),
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    this.releaseRecords.set(record.id, record);
+    return record;
+  }
+
+  async updateReleaseRecord(
+    id: string,
+    patch: Partial<Pick<ReleaseRecord, "status" | "confirmedAt" | "chainLedger" | "correlationId">>,
+  ): Promise<ReleaseRecord> {
+    const existing = this.releaseRecords.get(id);
+    if (!existing) {
+      throw new Error(`Release record ${id} not found`);
+    }
+
+    const updated: ReleaseRecord = {
+      ...existing,
+      ...patch,
+      updatedAt: new Date().toISOString(),
+    };
+
+    this.releaseRecords.set(id, updated);
+    return updated;
+  }
 }
 
 type OrderRow = {
@@ -589,6 +662,22 @@ type ReleaseIntentRow = {
   expires_at: string;
   correlation_id: string;
   created_at: string;
+};
+
+type ReleaseRecordRow = {
+  id: string;
+  release_intent_id: string;
+  order_id: string;
+  tx_hash: string;
+  attestation_nonce: string;
+  submitted_wallet: string;
+  contract_id: string;
+  status: "pending" | "confirmed" | "failed";
+  correlation_id: string;
+  confirmed_at: string | null;
+  chain_ledger: number | null;
+  created_at: string;
+  updated_at: string;
 };
 
 class SupabaseRepository implements Repository {
@@ -1120,6 +1209,109 @@ class SupabaseRepository implements Repository {
     return mapReleaseIntentRow(data);
   }
 
+  async getReleaseIntentByNonce(orderId: string, attestationNonce: string): Promise<ReleaseIntentRecord | null> {
+    const { data, error } = await this.client
+      .from("release_intents")
+      .select("*")
+      .eq("order_id", orderId)
+      .eq("attestation_nonce", attestationNonce)
+      .maybeSingle<ReleaseIntentRow>();
+
+    if (error) {
+      throw new Error(`Failed to fetch release intent by nonce from Supabase: ${error.message}`);
+    }
+
+    return data ? mapReleaseIntentRow(data) : null;
+  }
+
+  async getTransactionByHash(txHash: string): Promise<TransactionRecord | null> {
+    const { data, error } = await this.client
+      .from("transactions")
+      .select("*")
+      .eq("tx_hash", txHash)
+      .maybeSingle<TransactionRow>();
+
+    if (error) {
+      throw new Error(`Failed to fetch transaction by hash from Supabase: ${error.message}`);
+    }
+
+    return data ? mapTransactionRow(data) : null;
+  }
+
+  async getReleaseRecordByTxHash(txHash: string): Promise<ReleaseRecord | null> {
+    const { data, error } = await this.client
+      .from("release_records")
+      .select("*")
+      .eq("tx_hash", txHash)
+      .maybeSingle<ReleaseRecordRow>();
+
+    if (error) {
+      throw new Error(`Failed to fetch release record by tx hash from Supabase: ${error.message}`);
+    }
+
+    return data ? mapReleaseRecordRow(data) : null;
+  }
+
+  async createReleaseRecord(input: Omit<ReleaseRecord, "id" | "createdAt" | "updatedAt">): Promise<ReleaseRecord> {
+    const { data, error } = await this.client
+      .from("release_records")
+      .insert({
+        release_intent_id: input.releaseIntentId,
+        order_id: input.orderId,
+        tx_hash: input.txHash,
+        attestation_nonce: input.attestationNonce,
+        submitted_wallet: input.submittedWallet,
+        contract_id: input.contractId,
+        status: input.status,
+        correlation_id: input.correlationId,
+        confirmed_at: input.confirmedAt,
+        chain_ledger: input.chainLedger,
+      })
+      .select("*")
+      .single<ReleaseRecordRow>();
+
+    if (error || !data) {
+      throw new Error(`Failed to create release record in Supabase: ${error?.message ?? "unknown error"}`);
+    }
+
+    return mapReleaseRecordRow(data);
+  }
+
+  async updateReleaseRecord(
+    id: string,
+    patch: Partial<Pick<ReleaseRecord, "status" | "confirmedAt" | "chainLedger" | "correlationId">>,
+  ): Promise<ReleaseRecord> {
+    const update: Record<string, unknown> = {
+      updated_at: new Date().toISOString(),
+    };
+
+    if (patch.status !== undefined) {
+      update.status = patch.status;
+    }
+    if (patch.confirmedAt !== undefined) {
+      update.confirmed_at = patch.confirmedAt;
+    }
+    if (patch.chainLedger !== undefined) {
+      update.chain_ledger = patch.chainLedger;
+    }
+    if (patch.correlationId !== undefined) {
+      update.correlation_id = patch.correlationId;
+    }
+
+    const { data, error } = await this.client
+      .from("release_records")
+      .update(update)
+      .eq("id", id)
+      .select("*")
+      .single<ReleaseRecordRow>();
+
+    if (error || !data) {
+      throw new Error(`Failed to update release record in Supabase: ${error?.message ?? "unknown error"}`);
+    }
+
+    return mapReleaseRecordRow(data);
+  }
+
   private async insertStatusHistory(row: Omit<StatusHistoryRow, "id">) {
     const { error } = await this.client.from("order_status_history").insert({
       id: uuid(),
@@ -1308,6 +1500,24 @@ function mapReleaseIntentRow(row: ReleaseIntentRow): ReleaseIntentRecord {
     expiresAt: row.expires_at,
     correlationId: row.correlation_id,
     createdAt: row.created_at,
+  };
+}
+
+function mapReleaseRecordRow(row: ReleaseRecordRow): ReleaseRecord {
+  return {
+    id: row.id,
+    releaseIntentId: row.release_intent_id,
+    orderId: row.order_id,
+    txHash: row.tx_hash,
+    attestationNonce: row.attestation_nonce,
+    submittedWallet: row.submitted_wallet,
+    contractId: row.contract_id,
+    status: row.status,
+    correlationId: row.correlation_id,
+    confirmedAt: row.confirmed_at,
+    chainLedger: row.chain_ledger,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
   };
 }
 
