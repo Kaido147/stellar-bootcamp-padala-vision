@@ -126,6 +126,22 @@ export interface ReleaseRecord {
   updatedAt: string;
 }
 
+export interface DisputeRecord {
+  id: string;
+  orderId: string;
+  actorUserId: string;
+  actorWallet: string | null;
+  actorRoles: string[];
+  reasonCode: string;
+  description: string;
+  evidenceRefs: string[];
+  status: "open" | "resolved";
+  correlationId: string;
+  lastActivityAt: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Repository {
   readonly mode: "memory" | "supabase";
   generateOrderId(): string;
@@ -179,6 +195,8 @@ export interface Repository {
     id: string,
     patch: Partial<Pick<ReleaseRecord, "status" | "confirmedAt" | "chainLedger" | "correlationId">>,
   ): Promise<ReleaseRecord>;
+  createDispute(input: Omit<DisputeRecord, "createdAt" | "updatedAt">): Promise<DisputeRecord>;
+  getOpenDisputeByOrderId(orderId: string): Promise<DisputeRecord | null>;
 }
 
 export class InMemoryRepository implements Repository {
@@ -194,6 +212,7 @@ export class InMemoryRepository implements Repository {
   private contractRegistry = new Map<string, ContractRegistryRecord>();
   private releaseIntents = new Map<string, ReleaseIntentRecord>();
   private releaseRecords = new Map<string, ReleaseRecord>();
+  private disputes = new Map<string, DisputeRecord>();
   private nextOrderId = 1;
 
   generateOrderId(): string {
@@ -535,6 +554,22 @@ export class InMemoryRepository implements Repository {
     this.releaseRecords.set(id, updated);
     return updated;
   }
+
+  async createDispute(input: Omit<DisputeRecord, "createdAt" | "updatedAt">): Promise<DisputeRecord> {
+    const now = new Date().toISOString();
+    const record: DisputeRecord = {
+      ...input,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    this.disputes.set(record.id, record);
+    return record;
+  }
+
+  async getOpenDisputeByOrderId(orderId: string): Promise<DisputeRecord | null> {
+    return [...this.disputes.values()].find((record) => record.orderId === orderId && record.status === "open") ?? null;
+  }
 }
 
 type OrderRow = {
@@ -676,6 +711,22 @@ type ReleaseRecordRow = {
   correlation_id: string;
   confirmed_at: string | null;
   chain_ledger: number | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type DisputeRow = {
+  id: string;
+  order_id: string;
+  actor_user_id: string;
+  actor_wallet: string | null;
+  actor_roles_json: string[] | string;
+  reason_code: string;
+  description: string;
+  evidence_refs_json: string[] | string;
+  status: "open" | "resolved";
+  correlation_id: string;
+  last_activity_at: string;
   created_at: string;
   updated_at: string;
 };
@@ -1312,6 +1363,47 @@ class SupabaseRepository implements Repository {
     return mapReleaseRecordRow(data);
   }
 
+  async createDispute(input: Omit<DisputeRecord, "createdAt" | "updatedAt">): Promise<DisputeRecord> {
+    const { data, error } = await this.client
+      .from("disputes")
+      .insert({
+        id: input.id,
+        order_id: input.orderId,
+        actor_user_id: input.actorUserId,
+        actor_wallet: input.actorWallet,
+        actor_roles_json: input.actorRoles,
+        reason_code: input.reasonCode,
+        description: input.description,
+        evidence_refs_json: input.evidenceRefs,
+        status: input.status,
+        correlation_id: input.correlationId,
+        last_activity_at: input.lastActivityAt,
+      })
+      .select("*")
+      .single<DisputeRow>();
+
+    if (error || !data) {
+      throw new Error(`Failed to create dispute in Supabase: ${error?.message ?? "unknown error"}`);
+    }
+
+    return mapDisputeRow(data);
+  }
+
+  async getOpenDisputeByOrderId(orderId: string): Promise<DisputeRecord | null> {
+    const { data, error } = await this.client
+      .from("disputes")
+      .select("*")
+      .eq("order_id", orderId)
+      .eq("status", "open")
+      .maybeSingle<DisputeRow>();
+
+    if (error) {
+      throw new Error(`Failed to fetch open dispute by order id from Supabase: ${error.message}`);
+    }
+
+    return data ? mapDisputeRow(data) : null;
+  }
+
   private async insertStatusHistory(row: Omit<StatusHistoryRow, "id">) {
     const { error } = await this.client.from("order_status_history").insert({
       id: uuid(),
@@ -1516,6 +1608,24 @@ function mapReleaseRecordRow(row: ReleaseRecordRow): ReleaseRecord {
     correlationId: row.correlation_id,
     confirmedAt: row.confirmed_at,
     chainLedger: row.chain_ledger,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapDisputeRow(row: DisputeRow): DisputeRecord {
+  return {
+    id: row.id,
+    orderId: row.order_id,
+    actorUserId: row.actor_user_id,
+    actorWallet: row.actor_wallet,
+    actorRoles: Array.isArray(row.actor_roles_json) ? row.actor_roles_json : [],
+    reasonCode: row.reason_code,
+    description: row.description,
+    evidenceRefs: Array.isArray(row.evidence_refs_json) ? row.evidence_refs_json : [],
+    status: row.status,
+    correlationId: row.correlation_id,
+    lastActivityAt: row.last_activity_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
