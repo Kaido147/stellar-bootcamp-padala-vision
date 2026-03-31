@@ -1,0 +1,35 @@
+{
+  "name": "padala-vision-v2",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Padala-Vision v2 MVP monorepo",
+  "workspaces": [
+    "frontend",
+    "backend",
+    "shared"
+  ],
+  "scripts": {
+    "build": "npm run build -w shared && npm run build -w backend && npm run build -w frontend",
+    "dev": "npm run dev -w backend",
+    "dev:frontend": "npm run dev -w frontend",
+    "dev:backend": "npm run dev -w backend",
+    "test": "npm run test -w shared && npm run test -w backend && npm run test -w frontend",
+    "typecheck": "npm run typecheck -w shared && npm run typecheck -w backend && npm run typecheck -w frontend"
+  },
+  "keywords": [
+    "stellar",
+    "soroban",
+    "react",
+    "express",
+    "supabase"
+  ],
+  "author": "",
+  "license": "MIT",
+  "type": "module",
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@google/gemini-cli": "^0.35.3"
+  }
+}

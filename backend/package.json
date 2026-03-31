@@ -1,0 +1,31 @@
+{
+  "name": "@padala-vision/backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "test": "node --test --import tsx src/**/*.test.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@padala-vision/shared": "0.1.0",
+    "@supabase/supabase-js": "^2.56.0",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0",
+    "multer": "^2.0.2",
+    "uuid": "^13.0.0",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.4",
+    "@types/multer": "^2.0.0",
+    "@types/node": "^24.7.2",
+    "tsx": "^4.20.6"
+  }
+}

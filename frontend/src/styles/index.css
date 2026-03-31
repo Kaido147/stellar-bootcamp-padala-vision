@@ -1,0 +1,14 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  @apply bg-sand text-ink font-body;
+  background-image:
+    radial-gradient(circle at top left, rgba(219, 107, 69, 0.18), transparent 28%),
+    radial-gradient(circle at bottom right, rgba(102, 139, 108, 0.18), transparent 22%);
+}
+
+#root {
+  @apply min-h-screen;
+}
