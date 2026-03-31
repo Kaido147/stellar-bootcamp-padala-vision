@@ -20,6 +20,7 @@ const envSchema = z.object({
   PADALA_ESCROW_CONTRACT_ID: z.string().optional(),
   ORACLE_CONFIDENCE_THRESHOLD: z.coerce.number().default(0.8),
   WALLET_CHALLENGE_TTL_SECONDS: z.coerce.number().int().positive().default(300),
+  ATTESTATION_TTL_SECONDS: z.coerce.number().int().positive().default(900),
 });
 
 export const env = envSchema.parse(process.env);
