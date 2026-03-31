@@ -80,6 +80,19 @@ export interface WalletBindingRecord {
   updatedAt: string;
 }
 
+export interface ContractRegistryRecord {
+  id: string;
+  environment: "staging" | "pilot";
+  escrowContractId: string;
+  tokenContractId: string;
+  oraclePublicKey: string;
+  rpcUrl: string;
+  networkPassphrase: string;
+  status: "active" | "inactive";
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Repository {
   readonly mode: "memory" | "supabase";
   generateOrderId(): string;
@@ -120,6 +133,9 @@ export interface Repository {
     challengeId: string;
     verifiedAt: string;
   }): Promise<WalletBindingRecord>;
+  createContractRegistry(input: Omit<ContractRegistryRecord, "createdAt" | "updatedAt">): Promise<ContractRegistryRecord>;
+  getActiveContractRegistry(environment: "staging" | "pilot"): Promise<ContractRegistryRecord | null>;
+  clearContractRegistry(environment?: "staging" | "pilot"): Promise<void>;
 }
 
 export class InMemoryRepository implements Repository {
@@ -132,6 +148,7 @@ export class InMemoryRepository implements Repository {
   private idempotency = new Map<string, IdempotencyRecord>();
   private walletChallenges = new Map<string, WalletChallengeRecord>();
   private walletBindings = new Map<string, WalletBindingRecord>();
+  private contractRegistry = new Map<string, ContractRegistryRecord>();
   private nextOrderId = 1;
 
   generateOrderId(): string {
@@ -364,6 +381,53 @@ export class InMemoryRepository implements Repository {
     this.walletBindings.set(record.id, record);
     return record;
   }
+
+  async createContractRegistry(
+    input: Omit<ContractRegistryRecord, "createdAt" | "updatedAt">,
+  ): Promise<ContractRegistryRecord> {
+    const now = new Date().toISOString();
+    const record: ContractRegistryRecord = {
+      ...input,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    if (record.status === "active") {
+      for (const [key, existing] of this.contractRegistry.entries()) {
+        if (existing.environment === record.environment && existing.status === "active") {
+          this.contractRegistry.set(key, {
+            ...existing,
+            status: "inactive",
+            updatedAt: now,
+          });
+        }
+      }
+    }
+
+    this.contractRegistry.set(record.id, record);
+    return record;
+  }
+
+  async getActiveContractRegistry(environment: "staging" | "pilot"): Promise<ContractRegistryRecord | null> {
+    return (
+      [...this.contractRegistry.values()].find(
+        (record) => record.environment === environment && record.status === "active",
+      ) ?? null
+    );
+  }
+
+  async clearContractRegistry(environment?: "staging" | "pilot"): Promise<void> {
+    if (!environment) {
+      this.contractRegistry.clear();
+      return;
+    }
+
+    for (const [key, record] of this.contractRegistry.entries()) {
+      if (record.environment === environment) {
+        this.contractRegistry.delete(key);
+      }
+    }
+  }
 }
 
 type OrderRow = {
@@ -459,6 +523,19 @@ type WalletBindingRow = {
   challenge_id: string;
   verified_at: string;
   revoked_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type ContractRegistryRow = {
+  id: string;
+  environment: "staging" | "pilot";
+  escrow_contract_id: string;
+  token_contract_id: string;
+  oracle_public_key: string;
+  rpc_url: string;
+  network_passphrase: string;
+  status: "active" | "inactive";
   created_at: string;
   updated_at: string;
 };
@@ -885,6 +962,70 @@ class SupabaseRepository implements Repository {
     return mapWalletBindingRow(data);
   }
 
+  async createContractRegistry(
+    input: Omit<ContractRegistryRecord, "createdAt" | "updatedAt">,
+  ): Promise<ContractRegistryRecord> {
+    if (input.status === "active") {
+      const { error: deactivateError } = await this.client
+        .from("contract_registry")
+        .update({
+          status: "inactive",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("environment", input.environment)
+        .eq("status", "active");
+
+      if (deactivateError) {
+        throw new Error(`Failed to deactivate existing contract registry rows: ${deactivateError.message}`);
+      }
+    }
+
+    const { data, error } = await this.client
+      .from("contract_registry")
+      .insert({
+        id: input.id,
+        environment: input.environment,
+        escrow_contract_id: input.escrowContractId,
+        token_contract_id: input.tokenContractId,
+        oracle_public_key: input.oraclePublicKey,
+        rpc_url: input.rpcUrl,
+        network_passphrase: input.networkPassphrase,
+        status: input.status,
+      })
+      .select("*")
+      .single<ContractRegistryRow>();
+
+    if (error || !data) {
+      throw new Error(`Failed to create contract registry row in Supabase: ${error?.message ?? "unknown error"}`);
+    }
+
+    return mapContractRegistryRow(data);
+  }
+
+  async getActiveContractRegistry(environment: "staging" | "pilot"): Promise<ContractRegistryRecord | null> {
+    const { data, error } = await this.client
+      .from("contract_registry")
+      .select("*")
+      .eq("environment", environment)
+      .eq("status", "active")
+      .maybeSingle<ContractRegistryRow>();
+
+    if (error) {
+      throw new Error(`Failed to fetch active contract registry row from Supabase: ${error.message}`);
+    }
+
+    return data ? mapContractRegistryRow(data) : null;
+  }
+
+  async clearContractRegistry(environment?: "staging" | "pilot"): Promise<void> {
+    const query = this.client.from("contract_registry").delete();
+    const { error } = environment ? await query.eq("environment", environment) : await query;
+
+    if (error) {
+      throw new Error(`Failed to clear contract registry rows in Supabase: ${error.message}`);
+    }
+  }
+
   private async insertStatusHistory(row: Omit<StatusHistoryRow, "id">) {
     const { error } = await this.client.from("order_status_history").insert({
       id: uuid(),
@@ -1037,6 +1178,21 @@ function mapWalletBindingRow(row: WalletBindingRow): WalletBindingRecord {
     challengeId: row.challenge_id,
     verifiedAt: row.verified_at,
     revokedAt: row.revoked_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapContractRegistryRow(row: ContractRegistryRow): ContractRegistryRecord {
+  return {
+    id: row.id,
+    environment: row.environment,
+    escrowContractId: row.escrow_contract_id,
+    tokenContractId: row.token_contract_id,
+    oraclePublicKey: row.oracle_public_key,
+    rpcUrl: row.rpc_url,
+    networkPassphrase: row.network_passphrase,
+    status: row.status,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
