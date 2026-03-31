@@ -19,6 +19,7 @@ test("correlation middleware preserves inbound header", async () => {
         email: "user@example.com",
         phone: null,
         accessToken: "valid-token",
+        roles: [],
       }),
     }),
   });
@@ -43,6 +44,7 @@ test("idempotency replays duplicate POST responses for the same key and payload"
         email: "user@example.com",
         phone: null,
         accessToken: "valid-token",
+        roles: [],
       }),
     }),
   });
@@ -83,6 +85,7 @@ test("idempotency rejects same key with a different payload", async () => {
         email: "user@example.com",
         phone: null,
         accessToken: "valid-token",
+        roles: [],
       }),
     }),
   });
@@ -120,6 +123,7 @@ test("idempotency scope is isolated by authorization header", async () => {
         email: `${accessToken}@example.com`,
         phone: null,
         accessToken,
+        roles: [],
       }),
     }),
   });
@@ -175,6 +179,7 @@ test("auth middleware attaches session actor for valid tokens", async () => {
         email: "actor@example.com",
         phone: null,
         accessToken,
+        roles: [],
       }),
     }),
   });

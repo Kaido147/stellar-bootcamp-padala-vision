@@ -93,6 +93,23 @@ export interface ContractRegistryRecord {
   updatedAt: string;
 }
 
+export interface ReleaseIntentRecord {
+  id: string;
+  orderId: string;
+  actorUserId: string;
+  actorWallet: string | null;
+  actorRoles: string[];
+  contractId: string;
+  environment: "staging" | "pilot";
+  attestationNonce: string;
+  attestationPayload: unknown;
+  attestationSignature: string;
+  issuedAt: string;
+  expiresAt: string;
+  correlationId: string;
+  createdAt: string;
+}
+
 export interface Repository {
   readonly mode: "memory" | "supabase";
   generateOrderId(): string;
@@ -136,6 +153,8 @@ export interface Repository {
   createContractRegistry(input: Omit<ContractRegistryRecord, "createdAt" | "updatedAt">): Promise<ContractRegistryRecord>;
   getActiveContractRegistry(environment: "staging" | "pilot"): Promise<ContractRegistryRecord | null>;
   clearContractRegistry(environment?: "staging" | "pilot"): Promise<void>;
+  getActiveWalletBindingByUser(userId: string): Promise<WalletBindingRecord | null>;
+  createReleaseIntent(input: Omit<ReleaseIntentRecord, "createdAt">): Promise<ReleaseIntentRecord>;
 }
 
 export class InMemoryRepository implements Repository {
@@ -149,6 +168,7 @@ export class InMemoryRepository implements Repository {
   private walletChallenges = new Map<string, WalletChallengeRecord>();
   private walletBindings = new Map<string, WalletBindingRecord>();
   private contractRegistry = new Map<string, ContractRegistryRecord>();
+  private releaseIntents = new Map<string, ReleaseIntentRecord>();
   private nextOrderId = 1;
 
   generateOrderId(): string {
@@ -382,6 +402,10 @@ export class InMemoryRepository implements Repository {
     return record;
   }
 
+  async getActiveWalletBindingByUser(userId: string): Promise<WalletBindingRecord | null> {
+    return [...this.walletBindings.values()].find((binding) => binding.userId === userId && binding.revokedAt === null) ?? null;
+  }
+
   async createContractRegistry(
     input: Omit<ContractRegistryRecord, "createdAt" | "updatedAt">,
   ): Promise<ContractRegistryRecord> {
@@ -427,6 +451,16 @@ export class InMemoryRepository implements Repository {
         this.contractRegistry.delete(key);
       }
     }
+  }
+
+  async createReleaseIntent(input: Omit<ReleaseIntentRecord, "createdAt">): Promise<ReleaseIntentRecord> {
+    const record: ReleaseIntentRecord = {
+      ...input,
+      createdAt: new Date().toISOString(),
+    };
+
+    this.releaseIntents.set(record.id, record);
+    return record;
   }
 }
 
@@ -538,6 +572,23 @@ type ContractRegistryRow = {
   status: "active" | "inactive";
   created_at: string;
   updated_at: string;
+};
+
+type ReleaseIntentRow = {
+  id: string;
+  order_id: string;
+  actor_user_id: string;
+  actor_wallet: string | null;
+  actor_roles_json: string[] | string;
+  contract_id: string;
+  environment: "staging" | "pilot";
+  attestation_nonce: string;
+  attestation_payload: unknown;
+  attestation_signature: string;
+  issued_at: string;
+  expires_at: string;
+  correlation_id: string;
+  created_at: string;
 };
 
 class SupabaseRepository implements Repository {
@@ -962,6 +1013,21 @@ class SupabaseRepository implements Repository {
     return mapWalletBindingRow(data);
   }
 
+  async getActiveWalletBindingByUser(userId: string): Promise<WalletBindingRecord | null> {
+    const { data, error } = await this.client
+      .from("wallet_bindings")
+      .select("*")
+      .eq("user_id", userId)
+      .is("revoked_at", null)
+      .maybeSingle<WalletBindingRow>();
+
+    if (error) {
+      throw new Error(`Failed to fetch active wallet binding by user from Supabase: ${error.message}`);
+    }
+
+    return data ? mapWalletBindingRow(data) : null;
+  }
+
   async createContractRegistry(
     input: Omit<ContractRegistryRecord, "createdAt" | "updatedAt">,
   ): Promise<ContractRegistryRecord> {
@@ -1024,6 +1090,34 @@ class SupabaseRepository implements Repository {
     if (error) {
       throw new Error(`Failed to clear contract registry rows in Supabase: ${error.message}`);
     }
+  }
+
+  async createReleaseIntent(input: Omit<ReleaseIntentRecord, "createdAt">): Promise<ReleaseIntentRecord> {
+    const { data, error } = await this.client
+      .from("release_intents")
+      .insert({
+        id: input.id,
+        order_id: input.orderId,
+        actor_user_id: input.actorUserId,
+        actor_wallet: input.actorWallet,
+        actor_roles_json: input.actorRoles,
+        contract_id: input.contractId,
+        environment: input.environment,
+        attestation_nonce: input.attestationNonce,
+        attestation_payload: input.attestationPayload,
+        attestation_signature: input.attestationSignature,
+        issued_at: input.issuedAt,
+        expires_at: input.expiresAt,
+        correlation_id: input.correlationId,
+      })
+      .select("*")
+      .single<ReleaseIntentRow>();
+
+    if (error || !data) {
+      throw new Error(`Failed to create release intent in Supabase: ${error?.message ?? "unknown error"}`);
+    }
+
+    return mapReleaseIntentRow(data);
   }
 
   private async insertStatusHistory(row: Omit<StatusHistoryRow, "id">) {
@@ -1195,6 +1289,25 @@ function mapContractRegistryRow(row: ContractRegistryRow): ContractRegistryRecor
     status: row.status,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+  };
+}
+
+function mapReleaseIntentRow(row: ReleaseIntentRow): ReleaseIntentRecord {
+  return {
+    id: row.id,
+    orderId: row.order_id,
+    actorUserId: row.actor_user_id,
+    actorWallet: row.actor_wallet,
+    actorRoles: Array.isArray(row.actor_roles_json) ? row.actor_roles_json : [],
+    contractId: row.contract_id,
+    environment: row.environment,
+    attestationNonce: row.attestation_nonce,
+    attestationPayload: row.attestation_payload,
+    attestationSignature: row.attestation_signature,
+    issuedAt: row.issued_at,
+    expiresAt: row.expires_at,
+    correlationId: row.correlation_id,
+    createdAt: row.created_at,
   };
 }
 

@@ -7,6 +7,7 @@ export interface SessionActor {
   email: string | null;
   phone: string | null;
   accessToken: string;
+  roles: string[];
 }
 
 interface CreateAuthSessionMiddlewareOptions {
@@ -67,6 +68,9 @@ async function defaultResolveSessionActor(accessToken: string): Promise<SessionA
     email: data.user.email ?? null,
     phone: data.user.phone ?? null,
     accessToken,
+    roles: Array.isArray(data.user.app_metadata?.roles)
+      ? data.user.app_metadata.roles.filter((value): value is string => typeof value === "string")
+      : [],
   };
 }
 
