@@ -6,24 +6,32 @@
   "scripts": {
     "build": "tsc --noEmit && vite build",
     "dev": "vite",
-    "test": "node -e \"console.log('frontend: no tests yet')\"",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@padala-vision/shared": "0.1.0",
     "@stellar/freighter-api": "^6.0.1",
     "@stellar/stellar-sdk": "^15.0.0",
-    "@padala-vision/shared": "0.1.0",
+    "@supabase/supabase-js": "^2.101.0",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react-dom": "^19.2.0",
+    "react-router-dom": "^7.13.2"
   },
   "devDependencies": {
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
     "@types/react": "^19.2.2",
     "@types/react-dom": "^19.2.2",
     "@vitejs/plugin-react": "^5.1.0",
     "autoprefixer": "^10.4.21",
+    "jsdom": "^29.0.1",
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.9.3",
-    "vite": "^7.1.7"
+    "vite": "^7.1.7",
+    "vitest": "^4.1.2"
   }
 }

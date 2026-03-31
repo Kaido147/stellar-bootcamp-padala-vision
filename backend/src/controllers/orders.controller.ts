@@ -1,6 +1,7 @@
 import multer from "multer";
 import type { Request, Response } from "express";
 import { getSessionActor } from "../middleware/auth.js";
+import { getCorrelationId } from "../middleware/correlation-id.js";
 import { OrdersService } from "../services/orders.service.js";
 import { StorageService } from "../services/storage.service.js";
 import {
@@ -8,6 +9,7 @@ import {
   createOrderSchema,
   evidenceSubmitSchema,
   markInTransitSchema,
+  orderActionRecordSchema,
   releaseSchema,
 } from "../validators/orders.js";
 
@@ -48,11 +50,37 @@ export async function acceptJob(req: Request, res: Response) {
 
 export async function fundOrder(req: Request, res: Response) {
   const actor = getSessionActor(res);
+  const parsed = orderActionRecordSchema.safeParse(req.body);
+  if (parsed.success) {
+    const result = await ordersService.recordFunding({
+      orderId: getIdParam(req),
+      actor,
+      actionIntentId: parsed.data.action_intent_id,
+      txHash: parsed.data.tx_hash,
+      submittedWallet: parsed.data.submitted_wallet,
+      correlationId: getCorrelationId(res),
+    });
+    return res.status(result.action_status === "pending_confirmation" ? 202 : 200).json(result);
+  }
+
   res.json({ order: await ordersService.markFunded(getIdParam(req), actor) });
 }
 
 export async function markInTransit(req: Request, res: Response) {
   const actor = getSessionActor(res);
+  const actionRecord = orderActionRecordSchema.safeParse(req.body);
+  if (actionRecord.success) {
+    const result = await ordersService.recordInTransit({
+      orderId: getIdParam(req),
+      actor,
+      actionIntentId: actionRecord.data.action_intent_id,
+      txHash: actionRecord.data.tx_hash,
+      submittedWallet: actionRecord.data.submitted_wallet,
+      correlationId: getCorrelationId(res),
+    });
+    return res.status(result.action_status === "pending_confirmation" ? 202 : 200).json(result);
+  }
+
   const payload = markInTransitSchema.parse(req.body);
   res.json({ order: await ordersService.markInTransit(getIdParam(req), payload.rider_wallet, actor) });
 }
@@ -97,4 +125,48 @@ export async function releaseEscrow(req: Request, res: Response) {
 
 export async function getOrderHistory(req: Request, res: Response) {
   res.json(await ordersService.getHistory(getIdParam(req)));
+}
+
+export async function createFundIntent(req: Request, res: Response) {
+  const actor = getSessionActor(res);
+  const result = await ordersService.createFundIntent({
+    orderId: getIdParam(req),
+    actor,
+    correlationId: getCorrelationId(res),
+  });
+  res.status(201).json(result);
+}
+
+export async function createRiderAssignIntent(req: Request, res: Response) {
+  const actor = getSessionActor(res);
+  const result = await ordersService.createRiderAssignIntent({
+    orderId: getIdParam(req),
+    actor,
+    correlationId: getCorrelationId(res),
+  });
+  res.status(201).json(result);
+}
+
+export async function recordRiderAssign(req: Request, res: Response) {
+  const actor = getSessionActor(res);
+  const payload = orderActionRecordSchema.parse(req.body);
+  const result = await ordersService.recordRiderAssign({
+    orderId: getIdParam(req),
+    actor,
+    actionIntentId: payload.action_intent_id,
+    txHash: payload.tx_hash,
+    submittedWallet: payload.submitted_wallet,
+    correlationId: getCorrelationId(res),
+  });
+  res.status(result.action_status === "pending_confirmation" ? 202 : 200).json(result);
+}
+
+export async function createInTransitIntent(req: Request, res: Response) {
+  const actor = getSessionActor(res);
+  const result = await ordersService.createInTransitIntent({
+    orderId: getIdParam(req),
+    actor,
+    correlationId: getCorrelationId(res),
+  });
+  res.status(201).json(result);
 }

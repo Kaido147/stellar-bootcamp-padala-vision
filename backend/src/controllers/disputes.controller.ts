@@ -6,6 +6,11 @@ import { createDisputeSchema, resolveDisputeSchema } from "../validators/dispute
 
 const disputeService = new DisputeService();
 
+function getIdParam(req: Request) {
+  const id = req.params.id;
+  return Array.isArray(id) ? id[0] : id;
+}
+
 export async function createDispute(req: Request, res: Response) {
   const actor = getSessionActor(res);
   const payload = createDisputeSchema.parse(req.body);
@@ -23,7 +28,7 @@ export async function createDispute(req: Request, res: Response) {
 
 export async function resolveDispute(req: Request, res: Response) {
   const actor = getSessionActor(res);
-  const disputeId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const disputeId = getIdParam(req);
   const payload = resolveDisputeSchema.parse(req.body);
   const result = await disputeService.resolveDispute({
     actor,
@@ -38,4 +43,14 @@ export async function resolveDispute(req: Request, res: Response) {
   });
 
   res.status(result.resolution_status === "pending" ? 202 : 200).json(result);
+}
+
+export async function listDisputes(req: Request, res: Response) {
+  const actor = getSessionActor(res);
+  res.json(await disputeService.listDisputes({ actor }));
+}
+
+export async function getDispute(req: Request, res: Response) {
+  const actor = getSessionActor(res);
+  res.json(await disputeService.getDisputeDetail({ actor, disputeIdOrOrderId: getIdParam(req) }));
 }

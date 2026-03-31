@@ -34,6 +34,8 @@ export class ReconciliationService {
       orderId: input.orderId,
       contractId,
       forceRefresh: input.forceRefresh ?? false,
+      rpcUrl: contractSet.rpcUrl,
+      networkPassphrase: contractSet.networkPassphrase,
     });
 
     if (chainState.ambiguous) {

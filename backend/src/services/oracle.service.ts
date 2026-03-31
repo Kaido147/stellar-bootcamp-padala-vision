@@ -4,16 +4,20 @@ import type {
   SignedOracleAttestation,
 } from "@padala-vision/shared";
 import { env } from "../config/env.js";
-import { signAttestation } from "../lib/attestation.js";
+import { buildAttestationV2Payload, signAttestationV2 } from "../lib/attestation.js";
 import { GeminiVisionProvider } from "../providers/oracle/gemini.js";
 import { StubVisionProvider } from "../providers/oracle/stub.js";
 import type { VisionOracleProvider } from "../providers/oracle/types.js";
+import { ContractRegistryService } from "./contract-registry.service.js";
 
 export class OracleService {
   private provider: VisionOracleProvider;
   private providerMode: "stub" | "gemini";
+  private readonly contractRegistryService: ContractRegistryService;
 
   constructor(provider?: VisionOracleProvider) {
+    this.contractRegistryService = new ContractRegistryService();
+
     if (provider) {
       this.provider = provider;
       this.providerMode = "stub";
@@ -64,20 +68,21 @@ export class OracleService {
     }
   }
 
-  signApproval(orderId: string, confidence: number): SignedOracleAttestation {
+  async signApproval(orderId: string, confidence: number): Promise<SignedOracleAttestation> {
+    const contractSet = await this.contractRegistryService.resolveActiveContractSet();
     const issuedAt = new Date();
     const expiresAt = new Date(issuedAt.getTime() + 15 * 60 * 1000);
 
-    return signAttestation(
-      {
-        orderId,
-        decision: "APPROVE",
-        confidence,
-        issuedAt: issuedAt.toISOString(),
-        expiresAt: expiresAt.toISOString(),
-      },
-      env.ORACLE_SECRET_KEY,
-    );
+    const payload = buildAttestationV2Payload({
+      orderId,
+      confidence,
+      issuedAt,
+      expiresAt,
+      contractId: contractSet.contractId,
+      environment: contractSet.environment,
+    });
+
+    return signAttestationV2(payload, env.ORACLE_SECRET_KEY ?? "");
   }
 
   getProviderMode() {

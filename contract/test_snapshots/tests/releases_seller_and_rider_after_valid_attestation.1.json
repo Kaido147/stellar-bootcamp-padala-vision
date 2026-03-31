@@ -328,6 +328,36 @@
               "key": {
                 "vec": [
                   {
+                    "symbol": "ConsumedReleaseNonce"
+                  },
+                  {
+                    "u64": "1"
+                  },
+                  {
+                    "string": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                  }
+                ]
+              },
+              "durability": "persistent",
+              "val": {
+                "bool": true
+              }
+            }
+          },
+          "ext": "v0"
+        },
+        "live_until": 4095
+      },
+      {
+        "entry": {
+          "last_modified_ledger_seq": 0,
+          "data": {
+            "contract_data": {
+              "ext": "v0",
+              "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4",
+              "key": {
+                "vec": [
+                  {
                     "symbol": "Order"
                   },
                   {
@@ -338,6 +368,14 @@
               "durability": "persistent",
               "val": {
                 "map": [
+                  {
+                    "key": {
+                      "symbol": "assigned_at"
+                    },
+                    "val": {
+                      "u64": "1000"
+                    }
+                  },
                   {
                     "key": {
                       "symbol": "buyer"
@@ -364,6 +402,18 @@
                   },
                   {
                     "key": {
+                      "symbol": "dispute_last_activity_at"
+                    },
+                    "val": "void"
+                  },
+                  {
+                    "key": {
+                      "symbol": "disputed_at"
+                    },
+                    "val": "void"
+                  },
+                  {
+                    "key": {
                       "symbol": "expires_at"
                     },
                     "val": {
@@ -373,6 +423,14 @@
                   {
                     "key": {
                       "symbol": "funded_at"
+                    },
+                    "val": {
+                      "u64": "1000"
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "in_transit_at"
                     },
                     "val": {
                       "u64": "1000"
@@ -391,7 +449,7 @@
                       "symbol": "oracle_pubkey"
                     },
                     "val": {
-                      "bytes": "fc10af881123af81f04014a939b301b630345dfa608d57641c8322636cd0c886"
+                      "bytes": "e6eeca66c625fb0d2bcf0ce3ae804343e0aa87f5825ee2bb36bf5c7c9a6c21cc"
                     }
                   },
                   {
@@ -473,10 +531,18 @@
                         "map": [
                           {
                             "key": {
+                              "symbol": "environment"
+                            },
+                            "val": {
+                              "string": "staging"
+                            }
+                          },
+                          {
+                            "key": {
                               "symbol": "oracle_pubkey"
                             },
                             "val": {
-                              "bytes": "fc10af881123af81f04014a939b301b630345dfa608d57641c8322636cd0c886"
+                              "bytes": "e6eeca66c625fb0d2bcf0ce3ae804343e0aa87f5825ee2bb36bf5c7c9a6c21cc"
                             }
                           },
                           {

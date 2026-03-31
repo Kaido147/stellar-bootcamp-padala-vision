@@ -11,6 +11,12 @@ export interface ResolvedContractSet {
   oraclePublicKey: string;
   rpcUrl: string;
   networkPassphrase: string;
+  contractVersion: string;
+  interfaceVersion: string;
+  wasmHash: string | null;
+  deploymentLabel: string | null;
+  deployedAt: string | null;
+  activatedAt: string | null;
 }
 
 export class ContractRegistryService {
@@ -36,7 +42,13 @@ export async function seedContractRegistry(input: {
   oraclePublicKey: string;
   rpcUrl: string;
   networkPassphrase: string;
-  status?: "active" | "inactive";
+  contractVersion?: string;
+  interfaceVersion?: string;
+  wasmHash?: string | null;
+  deploymentLabel?: string | null;
+  deployedAt?: string | null;
+  activatedAt?: string | null;
+  status?: "candidate" | "active" | "inactive";
 }) {
   return repository.createContractRegistry({
     id: randomUUID(),
@@ -46,6 +58,12 @@ export async function seedContractRegistry(input: {
     oraclePublicKey: input.oraclePublicKey,
     rpcUrl: input.rpcUrl,
     networkPassphrase: input.networkPassphrase,
+    contractVersion: input.contractVersion ?? "v2",
+    interfaceVersion: input.interfaceVersion ?? "soroban-v2",
+    wasmHash: input.wasmHash ?? null,
+    deploymentLabel: input.deploymentLabel ?? null,
+    deployedAt: input.deployedAt ?? null,
+    activatedAt: input.activatedAt ?? null,
     status: input.status ?? "active",
   });
 }
@@ -63,5 +81,11 @@ function mapResolvedContractSet(record: ContractRegistryRecord): ResolvedContrac
     oraclePublicKey: record.oraclePublicKey,
     rpcUrl: record.rpcUrl,
     networkPassphrase: record.networkPassphrase,
+    contractVersion: record.contractVersion,
+    interfaceVersion: record.interfaceVersion,
+    wasmHash: record.wasmHash,
+    deploymentLabel: record.deploymentLabel,
+    deployedAt: record.deployedAt,
+    activatedAt: record.activatedAt,
   };
 }

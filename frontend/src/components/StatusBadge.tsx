@@ -16,7 +16,7 @@ const colorMap: Record<OrderStatus, string> = {
 
 export function StatusBadge({ status }: { status: OrderStatus }) {
   return (
-    <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${colorMap[status]}`}>
+    <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${colorMap[status]}`} data-testid="status-badge">
       {status}
     </span>
   );

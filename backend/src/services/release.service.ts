@@ -208,12 +208,23 @@ export class ReleaseService {
       throw new HttpError(409, "Release transaction hash has already been recorded", "release_tx_hash_conflict");
     }
 
+    const contractSet = await this.contractRegistryService.resolveActiveContractSet(releaseIntent.environment);
+    if (contractSet.contractId !== releaseIntent.contractId) {
+      throw new HttpError(
+        409,
+        "Release intent contract does not match the active contract registry",
+        "release_contract_mismatch",
+      );
+    }
+
     const verifiedTx = await this.chainService.verifyReleaseTransaction({
       txHash: input.txHash,
       orderId: input.orderId,
       contractId: releaseIntent.contractId,
       attestationNonce: input.attestationNonce,
       submittedWallet: input.submittedWallet,
+      rpcUrl: contractSet.rpcUrl,
+      networkPassphrase: contractSet.networkPassphrase,
     });
 
     if (
@@ -237,6 +248,13 @@ export class ReleaseService {
       chainLedger: verifiedTx.ledger ?? null,
     });
 
+    const transaction = await repository.createTransaction({
+      orderId: input.orderId,
+      txHash: input.txHash,
+      txType: "release",
+      txStatus: verifiedTx.status,
+    });
+
     if (verifiedTx.status === "pending") {
       return {
         release_status: "pending_confirmation" as const,
@@ -252,10 +270,7 @@ export class ReleaseService {
       throw new HttpError(409, "Release transaction failed on-chain", "release_tx_failed");
     }
 
-    const tx = await repository.createTransaction({
-      orderId: input.orderId,
-      txHash: input.txHash,
-      txType: "release",
+    await repository.updateTransactionByHash(input.txHash, {
       txStatus: "confirmed",
     });
 
@@ -264,6 +279,7 @@ export class ReleaseService {
       "Released",
       "Release transaction confirmed on-chain",
       {
+        contractId: releaseIntent.contractId,
         releasedAt: new Date().toISOString(),
       },
     );
@@ -280,7 +296,10 @@ export class ReleaseService {
       chain_status: verifiedTx.status,
       financial_finality: true,
       order: releasedOrder,
-      tx,
+      tx: {
+        ...transaction,
+        txStatus: "confirmed",
+      },
       release_record_id: releaseRecord.id,
     };
   }

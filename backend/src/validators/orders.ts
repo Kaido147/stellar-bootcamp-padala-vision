@@ -16,6 +16,12 @@ export const markInTransitSchema = z.object({
   rider_wallet: z.string().min(1),
 });
 
+export const orderActionRecordSchema = z.object({
+  action_intent_id: z.string().uuid(),
+  tx_hash: z.string().min(1),
+  submitted_wallet: z.string().min(1),
+});
+
 export const evidenceSubmitSchema = z.object({
   order_id: z.string().min(1),
   rider_wallet: z.string().min(1),
@@ -32,13 +38,6 @@ export const evidenceSubmitSchema = z.object({
 export const releaseSchema = z.object({
   order_id: z.string().min(1),
   tx_hash: z.string().min(1),
-  tx_status: z.string().min(1),
-  attestation: z.object({
-    orderId: z.string(),
-    decision: z.literal("APPROVE"),
-    confidence: z.number(),
-    issuedAt: z.string().datetime(),
-    expiresAt: z.string().datetime(),
-    signature: z.string().min(1),
-  }),
+  attestation_nonce: z.string().length(64),
+  submitted_wallet: z.string().min(1),
 });

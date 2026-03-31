@@ -1,9 +1,7 @@
-import { randomBytes, sign } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { Keypair } from "@stellar/stellar-sdk";
-import type { OracleAttestationPayload, SignedOracleAttestation } from "@padala-vision/shared";
 import { HttpError } from "./errors.js";
 
-const ATTESTATION_V1_PREFIX = "padala-vision:v1";
 const ATTESTATION_V2_PREFIX = "padala-vision:v2";
 const FIELD_SEPARATOR = Uint8Array.from([0x1f]);
 
@@ -21,45 +19,6 @@ export interface AttestationV2Payload {
 
 export interface SignedAttestationV2 extends AttestationV2Payload {
   signature: string;
-}
-
-export function buildAttestationMessageBytes(payload: OracleAttestationPayload): Uint8Array {
-  const prefix = Buffer.from(ATTESTATION_V1_PREFIX, "utf8");
-  const orderId = bigIntToBytes(BigInt(payload.orderId));
-  const decisionCode = Uint8Array.from([1]);
-  const confidenceBps = numberToU32Bytes(Math.round(payload.confidence * 10_000));
-  const issuedAt = bigIntToBytes(BigInt(new Date(payload.issuedAt).getTime()));
-  const expiresAt = bigIntToBytes(BigInt(new Date(payload.expiresAt).getTime()));
-
-  return Buffer.concat([
-    prefix,
-    Buffer.from(FIELD_SEPARATOR),
-    Buffer.from(orderId),
-    Buffer.from(decisionCode),
-    Buffer.from(confidenceBps),
-    Buffer.from(issuedAt),
-    Buffer.from(expiresAt),
-  ]);
-}
-
-export function signAttestation(
-  payload: OracleAttestationPayload,
-  pkcs8PrivateKeyPem?: string,
-): SignedOracleAttestation {
-  if (!pkcs8PrivateKeyPem) {
-    return {
-      ...payload,
-      signature: Buffer.from(randomBytes(64)).toString("hex"),
-    };
-  }
-
-  const message = buildAttestationMessageBytes(payload);
-  const signature = sign(null, Buffer.from(message), pkcs8PrivateKeyPem);
-
-  return {
-    ...payload,
-    signature: signature.toString("hex"),
-  };
 }
 
 export function buildAttestationV2Payload(input: {

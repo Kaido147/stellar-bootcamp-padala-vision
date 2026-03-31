@@ -70,7 +70,7 @@
                   "i128": "3"
                 },
                 {
-                  "u64": "1500"
+                  "u64": "20000"
                 }
               ]
             }
@@ -145,7 +145,7 @@
   "ledger": {
     "protocol_version": 25,
     "sequence_number": 0,
-    "timestamp": 2000,
+    "timestamp": 8200,
     "network_id": "0000000000000000000000000000000000000000000000000000000000000000",
     "base_reserve": 0,
     "min_persistent_entry_ttl": 4096,
@@ -295,6 +295,12 @@
                 "map": [
                   {
                     "key": {
+                      "symbol": "assigned_at"
+                    },
+                    "val": "void"
+                  },
+                  {
+                    "key": {
                       "symbol": "buyer"
                     },
                     "val": {
@@ -319,10 +325,22 @@
                   },
                   {
                     "key": {
+                      "symbol": "dispute_last_activity_at"
+                    },
+                    "val": "void"
+                  },
+                  {
+                    "key": {
+                      "symbol": "disputed_at"
+                    },
+                    "val": "void"
+                  },
+                  {
+                    "key": {
                       "symbol": "expires_at"
                     },
                     "val": {
-                      "u64": "1500"
+                      "u64": "20000"
                     }
                   },
                   {
@@ -332,6 +350,12 @@
                     "val": {
                       "u64": "1000"
                     }
+                  },
+                  {
+                    "key": {
+                      "symbol": "in_transit_at"
+                    },
+                    "val": "void"
                   },
                   {
                     "key": {
@@ -346,7 +370,7 @@
                       "symbol": "oracle_pubkey"
                     },
                     "val": {
-                      "bytes": "8650b35ccd5b1bcb6c7fca17f5075bab3e0b72cae459cd12b395c77f43a6c739"
+                      "bytes": "ca4d49ea347caee4b18e762620389165db53b202a57a71d087ceb85763b91779"
                     }
                   },
                   {
@@ -426,10 +450,18 @@
                         "map": [
                           {
                             "key": {
+                              "symbol": "environment"
+                            },
+                            "val": {
+                              "string": "staging"
+                            }
+                          },
+                          {
+                            "key": {
                               "symbol": "oracle_pubkey"
                             },
                             "val": {
-                              "bytes": "8650b35ccd5b1bcb6c7fca17f5075bab3e0b72cae459cd12b395c77f43a6c739"
+                              "bytes": "ca4d49ea347caee4b18e762620389165db53b202a57a71d087ceb85763b91779"
                             }
                           },
                           {

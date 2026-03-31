@@ -8,6 +8,122 @@ import { ReleaseService } from "./release.service.js";
 export class DisputeService {
   constructor(private readonly releaseService = new ReleaseService()) {}
 
+  async listDisputes(input: { actor: SessionActor }) {
+    assertHasOperatorRole(
+      input.actor,
+      "dispute_queue_forbidden",
+      "Only ops_reviewer or ops_admin can view the dispute queue",
+    );
+
+    const disputes = await repository.listDisputes();
+    const items = await Promise.all(
+      disputes.map(async (dispute) => {
+        const order = await repository.getOrder(dispute.orderId);
+        const latestDecision = await repository.getLatestDecision(dispute.orderId);
+        return {
+          dispute_id: dispute.id,
+          order_id: dispute.orderId,
+          dispute_status: dispute.status,
+          reason_code: dispute.reasonCode,
+          description: dispute.description,
+          opened_at: dispute.createdAt,
+          updated_at: dispute.updatedAt,
+          resolved_at: dispute.resolvedAt,
+          resolution: dispute.resolution,
+          order_status: order?.status ?? null,
+          participants: order
+            ? {
+                seller_wallet: order.sellerWallet,
+                buyer_wallet: order.buyerWallet,
+                rider_wallet: order.riderWallet,
+              }
+            : null,
+          confidence: latestDecision?.confidence ?? null,
+          fraud_flags: latestDecision?.fraudFlags ?? [],
+          resolution_available: dispute.status === "open",
+        };
+      }),
+    );
+
+    return { disputes: items };
+  }
+
+  async getDisputeDetail(input: { actor: SessionActor; disputeIdOrOrderId: string }) {
+    const dispute = await resolveDisputeRecord(input.disputeIdOrOrderId);
+    const order = await repository.getOrder(dispute.orderId);
+    if (!order) {
+      throw new HttpError(404, "Order not found", "order_not_found");
+    }
+
+    const actorWallet = await getBoundWalletOrThrow(input.actor);
+    const operator = isOperator(input.actor);
+    const isParticipant = [order.buyerWallet, order.sellerWallet, order.riderWallet].filter(Boolean).includes(actorWallet);
+    if (!operator && !isParticipant) {
+      throw new HttpError(403, "Only an order participant or authorized operator can view this dispute", "dispute_forbidden");
+    }
+
+    const events = await repository.listDisputeEvents(dispute.id);
+    const latestDecision = await repository.getLatestDecision(dispute.orderId);
+    const transactions = await repository.getTransactions(dispute.orderId);
+
+    return {
+      dispute_id: dispute.id,
+      dispute_status: dispute.status,
+      reason_code: dispute.reasonCode,
+      description: dispute.description,
+      opened_at: dispute.createdAt,
+      updated_at: dispute.updatedAt,
+      resolved_at: dispute.resolvedAt,
+      opened_by: {
+        user_id: dispute.actorUserId,
+        wallet: dispute.actorWallet,
+        roles: dispute.actorRoles,
+      },
+      resolved_by: dispute.resolvedByUserId
+        ? {
+            user_id: dispute.resolvedByUserId,
+            wallet: dispute.resolvedByWallet,
+            roles: dispute.resolvedByRoles,
+          }
+        : null,
+      resolution: dispute.resolution
+        ? {
+            decision: dispute.resolution,
+            reason: dispute.resolutionReason,
+            note: dispute.resolutionNote,
+          }
+        : null,
+      order: {
+        id: order.id,
+        status: order.status,
+        contract_id: order.contractId,
+        seller_wallet: order.sellerWallet,
+        buyer_wallet: order.buyerWallet,
+        rider_wallet: order.riderWallet,
+        funded_at: order.fundedAt,
+        released_at: order.releasedAt,
+        created_at: order.createdAt,
+        updated_at: order.updatedAt,
+      },
+      latest_review: latestDecision
+        ? {
+            decision: latestDecision.decision,
+            confidence: latestDecision.confidence,
+            fraud_flags: latestDecision.fraudFlags,
+            reason: latestDecision.reason,
+            reviewed_at: latestDecision.createdAt,
+          }
+        : null,
+      transactions,
+      events,
+      allowed_actions: {
+        can_resolve_release: operator && dispute.status === "open",
+        can_resolve_refund: operator && dispute.status === "open",
+        can_reject_dispute: operator && dispute.status === "open",
+      },
+    };
+  }
+
   async openDispute(input: {
     actor: SessionActor;
     orderId: string;
@@ -109,7 +225,7 @@ export class DisputeService {
       "Only ops_reviewer or ops_admin can resolve disputes",
     );
 
-    const dispute = await repository.getDisputeById(input.disputeId);
+    const dispute = await resolveDisputeRecord(input.disputeId);
     if (!dispute) {
       throw new HttpError(404, "Dispute not found", "dispute_not_found");
     }
@@ -258,4 +374,18 @@ export class DisputeService {
       next_action: "refund_chain_confirmation_required",
     };
   }
+}
+
+async function resolveDisputeRecord(disputeIdOrOrderId: string) {
+  const direct = await repository.getDisputeById(disputeIdOrOrderId);
+  if (direct) {
+    return direct;
+  }
+
+  const latestForOrder = await repository.getLatestDisputeByOrderId(disputeIdOrOrderId);
+  if (latestForOrder) {
+    return latestForOrder;
+  }
+
+  throw new HttpError(404, "Dispute not found", "dispute_not_found");
 }

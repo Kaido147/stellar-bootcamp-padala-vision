@@ -194,6 +194,12 @@
                 "map": [
                   {
                     "key": {
+                      "symbol": "assigned_at"
+                    },
+                    "val": "void"
+                  },
+                  {
+                    "key": {
                       "symbol": "buyer"
                     },
                     "val": {
@@ -218,6 +224,18 @@
                   },
                   {
                     "key": {
+                      "symbol": "dispute_last_activity_at"
+                    },
+                    "val": "void"
+                  },
+                  {
+                    "key": {
+                      "symbol": "disputed_at"
+                    },
+                    "val": "void"
+                  },
+                  {
+                    "key": {
                       "symbol": "expires_at"
                     },
                     "val": {
@@ -227,6 +245,12 @@
                   {
                     "key": {
                       "symbol": "funded_at"
+                    },
+                    "val": "void"
+                  },
+                  {
+                    "key": {
+                      "symbol": "in_transit_at"
                     },
                     "val": "void"
                   },
@@ -243,7 +267,7 @@
                       "symbol": "oracle_pubkey"
                     },
                     "val": {
-                      "bytes": "80faf9eb5637e0f39046b59f02b03dac31fd4f702f77102f0b1f96e20fb2aae6"
+                      "bytes": "f858b0ee4f60c6658addf6ae39ab6c177e1530d5de18177f030bb88259c1f4e5"
                     }
                   },
                   {
@@ -323,10 +347,18 @@
                         "map": [
                           {
                             "key": {
+                              "symbol": "environment"
+                            },
+                            "val": {
+                              "string": "staging"
+                            }
+                          },
+                          {
+                            "key": {
                               "symbol": "oracle_pubkey"
                             },
                             "val": {
-                              "bytes": "80faf9eb5637e0f39046b59f02b03dac31fd4f702f77102f0b1f96e20fb2aae6"
+                              "bytes": "f858b0ee4f60c6658addf6ae39ab6c177e1530d5de18177f030bb88259c1f4e5"
                             }
                           },
                           {

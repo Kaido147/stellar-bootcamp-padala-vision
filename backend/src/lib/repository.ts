@@ -88,7 +88,13 @@ export interface ContractRegistryRecord {
   oraclePublicKey: string;
   rpcUrl: string;
   networkPassphrase: string;
-  status: "active" | "inactive";
+  contractVersion: string;
+  interfaceVersion: string;
+  wasmHash: string | null;
+  deploymentLabel: string | null;
+  deployedAt: string | null;
+  activatedAt: string | null;
+  status: "candidate" | "active" | "inactive";
   createdAt: string;
   updatedAt: string;
 }
@@ -184,6 +190,38 @@ export interface RefundIntentRecord {
   createdAt: string;
 }
 
+export interface ChainActionIntentRecord {
+  id: string;
+  orderId: string;
+  actionType: "fund" | "rider_assign" | "in_transit" | "refund";
+  actorUserId: string;
+  actorWallet: string | null;
+  actorRoles: string[];
+  contractId: string;
+  environment: "staging" | "pilot";
+  method: "fund_order" | "assign_rider" | "mark_in_transit" | "refund_order";
+  args: Record<string, unknown>;
+  replayKey: string;
+  correlationId: string;
+  createdAt: string;
+}
+
+export interface ChainActionRecord {
+  id: string;
+  chainActionIntentId: string;
+  orderId: string;
+  actionType: ChainActionIntentRecord["actionType"] | "refund";
+  txHash: string;
+  submittedWallet: string;
+  contractId: string;
+  status: "pending" | "confirmed" | "failed";
+  correlationId: string;
+  confirmedAt: string | null;
+  chainLedger: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface ReconciliationEventRecord {
   id: string;
   orderId: string;
@@ -256,6 +294,8 @@ export interface Repository {
   createDispute(input: Omit<DisputeRecord, "createdAt" | "updatedAt">): Promise<DisputeRecord>;
   getOpenDisputeByOrderId(orderId: string): Promise<DisputeRecord | null>;
   getDisputeById(id: string): Promise<DisputeRecord | null>;
+  getLatestDisputeByOrderId(orderId: string): Promise<DisputeRecord | null>;
+  listDisputes(): Promise<DisputeRecord[]>;
   updateDispute(
     id: string,
     patch: Partial<
@@ -275,7 +315,24 @@ export interface Repository {
     >,
   ): Promise<DisputeRecord>;
   createDisputeEvent(input: Omit<DisputeEventRecord, "id" | "createdAt">): Promise<DisputeEventRecord>;
+  listDisputeEvents(disputeId: string): Promise<DisputeEventRecord[]>;
   createRefundIntent(input: Omit<RefundIntentRecord, "createdAt">): Promise<RefundIntentRecord>;
+  getRefundIntentById(id: string): Promise<RefundIntentRecord | null>;
+  createChainActionIntent(input: Omit<ChainActionIntentRecord, "createdAt">): Promise<ChainActionIntentRecord>;
+  getChainActionIntentById(id: string): Promise<ChainActionIntentRecord | null>;
+  createChainActionRecord(input: Omit<ChainActionRecord, "id" | "createdAt" | "updatedAt">): Promise<ChainActionRecord>;
+  getChainActionRecordByTxHash(txHash: string): Promise<ChainActionRecord | null>;
+  updateChainActionRecord(
+    id: string,
+    patch: Partial<Pick<ChainActionRecord, "status" | "confirmedAt" | "chainLedger" | "correlationId">>,
+  ): Promise<ChainActionRecord>;
+  listChainActionRecordsByOrder(orderId: string): Promise<ChainActionRecord[]>;
+  updateTransactionByHash(
+    txHash: string,
+    patch: Partial<Pick<TransactionRecord, "txStatus">>,
+  ): Promise<TransactionRecord | null>;
+  listOrdersByStatuses(statuses: OrderStatus[]): Promise<OrderRecord[]>;
+  listEvidenceByOrderId(orderId: string): Promise<EvidenceRecord[]>;
   createReconciliationEvent(input: Omit<ReconciliationEventRecord, "id" | "createdAt">): Promise<ReconciliationEventRecord>;
 }
 
@@ -295,6 +352,8 @@ export class InMemoryRepository implements Repository {
   private disputes = new Map<string, DisputeRecord>();
   private disputeEvents: DisputeEventRecord[] = [];
   private refundIntents = new Map<string, RefundIntentRecord>();
+  private chainActionIntents = new Map<string, ChainActionIntentRecord>();
+  private chainActionRecords = new Map<string, ChainActionRecord>();
   private reconciliationEvents: ReconciliationEventRecord[] = [];
   private nextOrderId = 1;
 
@@ -658,6 +717,21 @@ export class InMemoryRepository implements Repository {
     return this.disputes.get(id) ?? null;
   }
 
+  async getLatestDisputeByOrderId(orderId: string): Promise<DisputeRecord | null> {
+    return (
+      [...this.disputes.values()]
+        .filter((record) => record.orderId === orderId)
+        .sort((left, right) => Date.parse(left.createdAt) - Date.parse(right.createdAt))
+        .at(-1) ?? null
+    );
+  }
+
+  async listDisputes(): Promise<DisputeRecord[]> {
+    return [...this.disputes.values()].sort(
+      (left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt),
+    );
+  }
+
   async updateDispute(
     id: string,
     patch: Partial<
@@ -702,6 +776,10 @@ export class InMemoryRepository implements Repository {
     return record;
   }
 
+  async listDisputeEvents(disputeId: string): Promise<DisputeEventRecord[]> {
+    return this.disputeEvents.filter((event) => event.disputeId === disputeId);
+  }
+
   async createRefundIntent(input: Omit<RefundIntentRecord, "createdAt">): Promise<RefundIntentRecord> {
     const record: RefundIntentRecord = {
       ...input,
@@ -710,6 +788,92 @@ export class InMemoryRepository implements Repository {
 
     this.refundIntents.set(record.id, record);
     return record;
+  }
+
+  async getRefundIntentById(id: string): Promise<RefundIntentRecord | null> {
+    return this.refundIntents.get(id) ?? null;
+  }
+
+  async createChainActionIntent(input: Omit<ChainActionIntentRecord, "createdAt">): Promise<ChainActionIntentRecord> {
+    const record: ChainActionIntentRecord = {
+      ...input,
+      createdAt: new Date().toISOString(),
+    };
+
+    this.chainActionIntents.set(record.id, record);
+    return record;
+  }
+
+  async getChainActionIntentById(id: string): Promise<ChainActionIntentRecord | null> {
+    return this.chainActionIntents.get(id) ?? null;
+  }
+
+  async createChainActionRecord(
+    input: Omit<ChainActionRecord, "id" | "createdAt" | "updatedAt">,
+  ): Promise<ChainActionRecord> {
+    const now = new Date().toISOString();
+    const record: ChainActionRecord = {
+      ...input,
+      id: uuid(),
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    this.chainActionRecords.set(record.id, record);
+    return record;
+  }
+
+  async getChainActionRecordByTxHash(txHash: string): Promise<ChainActionRecord | null> {
+    return [...this.chainActionRecords.values()].find((record) => record.txHash === txHash) ?? null;
+  }
+
+  async updateChainActionRecord(
+    id: string,
+    patch: Partial<Pick<ChainActionRecord, "status" | "confirmedAt" | "chainLedger" | "correlationId">>,
+  ): Promise<ChainActionRecord> {
+    const existing = this.chainActionRecords.get(id);
+    if (!existing) {
+      throw new Error(`Chain action record ${id} not found`);
+    }
+
+    const updated: ChainActionRecord = {
+      ...existing,
+      ...patch,
+      updatedAt: new Date().toISOString(),
+    };
+
+    this.chainActionRecords.set(id, updated);
+    return updated;
+  }
+
+  async listChainActionRecordsByOrder(orderId: string): Promise<ChainActionRecord[]> {
+    return [...this.chainActionRecords.values()].filter((record) => record.orderId === orderId);
+  }
+
+  async updateTransactionByHash(
+    txHash: string,
+    patch: Partial<Pick<TransactionRecord, "txStatus">>,
+  ): Promise<TransactionRecord | null> {
+    const index = this.transactions.findIndex((entry) => entry.txHash === txHash);
+    if (index === -1) {
+      return null;
+    }
+
+    const updated: TransactionRecord = {
+      ...this.transactions[index],
+      ...patch,
+    };
+    this.transactions[index] = updated;
+    return updated;
+  }
+
+  async listOrdersByStatuses(statuses: OrderStatus[]): Promise<OrderRecord[]> {
+    const allowed = new Set(statuses);
+    return [...this.orders.values()].filter((order) => allowed.has(order.status));
+  }
+
+  async listEvidenceByOrderId(orderId: string): Promise<EvidenceRecord[]> {
+    return this.evidence.filter((entry) => entry.orderId === orderId);
   }
 
   async createReconciliationEvent(
@@ -831,7 +995,13 @@ type ContractRegistryRow = {
   oracle_public_key: string;
   rpc_url: string;
   network_passphrase: string;
-  status: "active" | "inactive";
+  contract_version: string;
+  interface_version: string;
+  wasm_hash: string | null;
+  deployment_label: string | null;
+  deployed_at: string | null;
+  activated_at: string | null;
+  status: "candidate" | "active" | "inactive";
   created_at: string;
   updated_at: string;
 };
@@ -920,6 +1090,38 @@ type RefundIntentRow = {
   eligible_at: string;
   correlation_id: string;
   created_at: string;
+};
+
+type ChainActionIntentRow = {
+  id: string;
+  order_id: string;
+  action_type: ChainActionIntentRecord["actionType"];
+  actor_user_id: string;
+  actor_wallet: string | null;
+  actor_roles_json: string[] | string;
+  contract_id: string;
+  environment: "staging" | "pilot";
+  method: ChainActionIntentRecord["method"];
+  args_json: Record<string, unknown>;
+  replay_key: string;
+  correlation_id: string;
+  created_at: string;
+};
+
+type ChainActionRecordRow = {
+  id: string;
+  chain_action_intent_id: string;
+  order_id: string;
+  action_type: ChainActionRecord["actionType"];
+  tx_hash: string;
+  submitted_wallet: string;
+  contract_id: string;
+  status: ChainActionRecord["status"];
+  correlation_id: string;
+  confirmed_at: string | null;
+  chain_ledger: number | null;
+  created_at: string;
+  updated_at: string;
 };
 
 type ReconciliationEventRow = {
@@ -1403,6 +1605,12 @@ class SupabaseRepository implements Repository {
         oracle_public_key: input.oraclePublicKey,
         rpc_url: input.rpcUrl,
         network_passphrase: input.networkPassphrase,
+        contract_version: input.contractVersion,
+        interface_version: input.interfaceVersion,
+        wasm_hash: input.wasmHash,
+        deployment_label: input.deploymentLabel,
+        deployed_at: input.deployedAt,
+        activated_at: input.activatedAt,
         status: input.status,
       })
       .select("*")
@@ -1633,6 +1841,36 @@ class SupabaseRepository implements Repository {
     return data ? mapDisputeRow(data) : null;
   }
 
+  async getLatestDisputeByOrderId(orderId: string): Promise<DisputeRecord | null> {
+    const { data, error } = await this.client
+      .from("disputes")
+      .select("*")
+      .eq("order_id", orderId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle<DisputeRow>();
+
+    if (error) {
+      throw new Error(`Failed to fetch latest dispute by order id from Supabase: ${error.message}`);
+    }
+
+    return data ? mapDisputeRow(data) : null;
+  }
+
+  async listDisputes(): Promise<DisputeRecord[]> {
+    const { data, error } = await this.client
+      .from("disputes")
+      .select("*")
+      .order("updated_at", { ascending: false })
+      .returns<DisputeRow[]>();
+
+    if (error) {
+      throw new Error(`Failed to list disputes from Supabase: ${error.message}`);
+    }
+
+    return (data ?? []).map(mapDisputeRow);
+  }
+
   async updateDispute(
     id: string,
     patch: Partial<
@@ -1705,6 +1943,21 @@ class SupabaseRepository implements Repository {
     return mapDisputeEventRow(data);
   }
 
+  async listDisputeEvents(disputeId: string): Promise<DisputeEventRecord[]> {
+    const { data, error } = await this.client
+      .from("dispute_events")
+      .select("*")
+      .eq("dispute_id", disputeId)
+      .order("created_at", { ascending: true })
+      .returns<DisputeEventRow[]>();
+
+    if (error) {
+      throw new Error(`Failed to list dispute events from Supabase: ${error.message}`);
+    }
+
+    return (data ?? []).map(mapDisputeEventRow);
+  }
+
   async createRefundIntent(input: Omit<RefundIntentRecord, "createdAt">): Promise<RefundIntentRecord> {
     const { data, error } = await this.client
       .from("refund_intents")
@@ -1728,6 +1981,199 @@ class SupabaseRepository implements Repository {
     }
 
     return mapRefundIntentRow(data);
+  }
+
+  async getRefundIntentById(id: string): Promise<RefundIntentRecord | null> {
+    const { data, error } = await this.client
+      .from("refund_intents")
+      .select("*")
+      .eq("id", id)
+      .maybeSingle<RefundIntentRow>();
+
+    if (error) {
+      throw new Error(`Failed to fetch refund intent from Supabase: ${error.message}`);
+    }
+
+    return data ? mapRefundIntentRow(data) : null;
+  }
+
+  async createChainActionIntent(
+    input: Omit<ChainActionIntentRecord, "createdAt">,
+  ): Promise<ChainActionIntentRecord> {
+    const { data, error } = await this.client
+      .from("chain_action_intents")
+      .insert({
+        id: input.id,
+        order_id: input.orderId,
+        action_type: input.actionType,
+        actor_user_id: input.actorUserId,
+        actor_wallet: input.actorWallet,
+        actor_roles_json: input.actorRoles,
+        contract_id: input.contractId,
+        environment: input.environment,
+        method: input.method,
+        args_json: input.args,
+        replay_key: input.replayKey,
+        correlation_id: input.correlationId,
+      })
+      .select("*")
+      .single<ChainActionIntentRow>();
+
+    if (error || !data) {
+      throw new Error(`Failed to create chain action intent in Supabase: ${error?.message ?? "unknown error"}`);
+    }
+
+    return mapChainActionIntentRow(data);
+  }
+
+  async getChainActionIntentById(id: string): Promise<ChainActionIntentRecord | null> {
+    const { data, error } = await this.client
+      .from("chain_action_intents")
+      .select("*")
+      .eq("id", id)
+      .maybeSingle<ChainActionIntentRow>();
+
+    if (error) {
+      throw new Error(`Failed to fetch chain action intent from Supabase: ${error.message}`);
+    }
+
+    return data ? mapChainActionIntentRow(data) : null;
+  }
+
+  async createChainActionRecord(
+    input: Omit<ChainActionRecord, "id" | "createdAt" | "updatedAt">,
+  ): Promise<ChainActionRecord> {
+    const { data, error } = await this.client
+      .from("chain_action_records")
+      .insert({
+        chain_action_intent_id: input.chainActionIntentId,
+        order_id: input.orderId,
+        action_type: input.actionType,
+        tx_hash: input.txHash,
+        submitted_wallet: input.submittedWallet,
+        contract_id: input.contractId,
+        status: input.status,
+        correlation_id: input.correlationId,
+        confirmed_at: input.confirmedAt,
+        chain_ledger: input.chainLedger,
+      })
+      .select("*")
+      .single<ChainActionRecordRow>();
+
+    if (error || !data) {
+      throw new Error(`Failed to create chain action record in Supabase: ${error?.message ?? "unknown error"}`);
+    }
+
+    return mapChainActionRecordRow(data);
+  }
+
+  async getChainActionRecordByTxHash(txHash: string): Promise<ChainActionRecord | null> {
+    const { data, error } = await this.client
+      .from("chain_action_records")
+      .select("*")
+      .eq("tx_hash", txHash)
+      .maybeSingle<ChainActionRecordRow>();
+
+    if (error) {
+      throw new Error(`Failed to fetch chain action record by tx hash from Supabase: ${error.message}`);
+    }
+
+    return data ? mapChainActionRecordRow(data) : null;
+  }
+
+  async updateChainActionRecord(
+    id: string,
+    patch: Partial<Pick<ChainActionRecord, "status" | "confirmedAt" | "chainLedger" | "correlationId">>,
+  ): Promise<ChainActionRecord> {
+    const update: Record<string, unknown> = {
+      updated_at: new Date().toISOString(),
+    };
+
+    if (patch.status !== undefined) update.status = patch.status;
+    if (patch.confirmedAt !== undefined) update.confirmed_at = patch.confirmedAt;
+    if (patch.chainLedger !== undefined) update.chain_ledger = patch.chainLedger;
+    if (patch.correlationId !== undefined) update.correlation_id = patch.correlationId;
+
+    const { data, error } = await this.client
+      .from("chain_action_records")
+      .update(update)
+      .eq("id", id)
+      .select("*")
+      .single<ChainActionRecordRow>();
+
+    if (error || !data) {
+      throw new Error(`Failed to update chain action record in Supabase: ${error?.message ?? "unknown error"}`);
+    }
+
+    return mapChainActionRecordRow(data);
+  }
+
+  async listChainActionRecordsByOrder(orderId: string): Promise<ChainActionRecord[]> {
+    const { data, error } = await this.client
+      .from("chain_action_records")
+      .select("*")
+      .eq("order_id", orderId)
+      .order("created_at", { ascending: true })
+      .returns<ChainActionRecordRow[]>();
+
+    if (error) {
+      throw new Error(`Failed to list chain action records from Supabase: ${error.message}`);
+    }
+
+    return (data ?? []).map(mapChainActionRecordRow);
+  }
+
+  async updateTransactionByHash(
+    txHash: string,
+    patch: Partial<Pick<TransactionRecord, "txStatus">>,
+  ): Promise<TransactionRecord | null> {
+    const update: Record<string, unknown> = {};
+    if (patch.txStatus !== undefined) {
+      update.tx_status = patch.txStatus;
+    }
+
+    const { data, error } = await this.client
+      .from("transactions")
+      .update(update)
+      .eq("tx_hash", txHash)
+      .select("*")
+      .maybeSingle<TransactionRow>();
+
+    if (error) {
+      throw new Error(`Failed to update transaction by hash in Supabase: ${error.message}`);
+    }
+
+    return data ? mapTransactionRow(data) : null;
+  }
+
+  async listOrdersByStatuses(statuses: OrderStatus[]): Promise<OrderRecord[]> {
+    const { data, error } = await this.client
+      .from("orders")
+      .select("*")
+      .in("status", statuses)
+      .order("updated_at", { ascending: false })
+      .returns<OrderRow[]>();
+
+    if (error) {
+      throw new Error(`Failed to list orders by status from Supabase: ${error.message}`);
+    }
+
+    return (data ?? []).map(mapOrderRow);
+  }
+
+  async listEvidenceByOrderId(orderId: string): Promise<EvidenceRecord[]> {
+    const { data, error } = await this.client
+      .from("evidence_submissions")
+      .select("*")
+      .eq("order_id", orderId)
+      .order("submitted_at", { ascending: true })
+      .returns<EvidenceRow[]>();
+
+    if (error) {
+      throw new Error(`Failed to list evidence by order id from Supabase: ${error.message}`);
+    }
+
+    return (data ?? []).map(mapEvidenceRow);
   }
 
   async createReconciliationEvent(
@@ -1924,6 +2370,12 @@ function mapContractRegistryRow(row: ContractRegistryRow): ContractRegistryRecor
     oraclePublicKey: row.oracle_public_key,
     rpcUrl: row.rpc_url,
     networkPassphrase: row.network_passphrase,
+    contractVersion: row.contract_version,
+    interfaceVersion: row.interface_version,
+    wasmHash: row.wasm_hash,
+    deploymentLabel: row.deployment_label,
+    deployedAt: row.deployed_at,
+    activatedAt: row.activated_at,
     status: row.status,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -2023,6 +2475,42 @@ function mapRefundIntentRow(row: RefundIntentRow): RefundIntentRecord {
     eligibleAt: row.eligible_at,
     correlationId: row.correlation_id,
     createdAt: row.created_at,
+  };
+}
+
+function mapChainActionIntentRow(row: ChainActionIntentRow): ChainActionIntentRecord {
+  return {
+    id: row.id,
+    orderId: row.order_id,
+    actionType: row.action_type,
+    actorUserId: row.actor_user_id,
+    actorWallet: row.actor_wallet,
+    actorRoles: Array.isArray(row.actor_roles_json) ? row.actor_roles_json : [],
+    contractId: row.contract_id,
+    environment: row.environment,
+    method: row.method,
+    args: row.args_json,
+    replayKey: row.replay_key,
+    correlationId: row.correlation_id,
+    createdAt: row.created_at,
+  };
+}
+
+function mapChainActionRecordRow(row: ChainActionRecordRow): ChainActionRecord {
+  return {
+    id: row.id,
+    chainActionIntentId: row.chain_action_intent_id,
+    orderId: row.order_id,
+    actionType: row.action_type,
+    txHash: row.tx_hash,
+    submittedWallet: row.submitted_wallet,
+    contractId: row.contract_id,
+    status: row.status,
+    correlationId: row.correlation_id,
+    confirmedAt: row.confirmed_at,
+    chainLedger: row.chain_ledger,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
   };
 }
 

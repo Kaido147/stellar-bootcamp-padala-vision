@@ -3,6 +3,7 @@ import { HttpError } from "../lib/errors.js";
 import { repository } from "../lib/repository.js";
 import type { SessionActor } from "../middleware/auth.js";
 import { getBoundWalletOrThrow, isOperator } from "./authorization.service.js";
+import { ChainService } from "./chain.service.js";
 import { ContractRegistryService } from "./contract-registry.service.js";
 
 const FUNDED_UNACCEPTED_TIMEOUT_MS = 2 * 60 * 60 * 1000;
@@ -11,7 +12,10 @@ const IN_TRANSIT_TIMEOUT_MS = 8 * 60 * 60 * 1000;
 const DISPUTE_INACTIVITY_TIMEOUT_MS = 24 * 60 * 60 * 1000;
 
 export class RefundService {
-  constructor(private readonly contractRegistryService = new ContractRegistryService()) {}
+  constructor(
+    private readonly contractRegistryService = new ContractRegistryService(),
+    private readonly chainService = new ChainService(),
+  ) {}
 
   async createRefundIntent(input: {
     actor: SessionActor;
@@ -66,6 +70,23 @@ export class RefundService {
       correlationId: input.correlationId,
     });
 
+    await repository.createChainActionIntent({
+      id: refundIntent.id,
+      orderId: input.orderId,
+      actionType: "refund",
+      actorUserId: input.actor.userId,
+      actorWallet,
+      actorRoles: input.actor.roles,
+      contractId: contractSet.contractId,
+      environment: contractSet.environment,
+      method: "refund_order",
+      args: {
+        order_id: input.orderId,
+      },
+      replayKey: refundIntent.id,
+      correlationId: input.correlationId,
+    });
+
     return {
       refund_intent_id: refundIntent.id,
       order_id: input.orderId,
@@ -76,8 +97,121 @@ export class RefundService {
       args: {
         order_id: input.orderId,
       },
+      replay_key: refundIntent.id,
       eligibility_basis: eligibility.basis,
       eligible_at: eligibility.eligibleAt.toISOString(),
+    };
+  }
+
+  async recordRefund(input: {
+    actor: SessionActor;
+    orderId: string;
+    refundIntentId: string;
+    txHash: string;
+    submittedWallet: string;
+    correlationId: string;
+  }) {
+    const order = await repository.getOrder(input.orderId);
+    if (!order) {
+      throw new HttpError(404, "Order not found", "order_not_found");
+    }
+
+    const existingRecord = await repository.getChainActionRecordByTxHash(input.txHash);
+    if (existingRecord) {
+      return replayExistingRefund(existingRecord, input.orderId);
+    }
+
+    const actorWallet = await getBoundWalletOrThrow(input.actor);
+    if (actorWallet !== input.submittedWallet) {
+      throw new HttpError(403, "Submitted wallet must match the authenticated bound wallet", "refund_wallet_mismatch");
+    }
+
+    const refundIntent = await repository.getRefundIntentById(input.refundIntentId);
+    if (!refundIntent || refundIntent.orderId !== input.orderId) {
+      throw new HttpError(404, "Refund intent was not found for this order", "refund_intent_not_found");
+    }
+
+    const contractSet = await this.contractRegistryService.resolveActiveContractSet(refundIntent.environment);
+    if (contractSet.contractId !== refundIntent.contractId) {
+      throw new HttpError(409, "Refund intent contract does not match the active contract registry", "refund_contract_mismatch");
+    }
+
+    const verified = await this.chainService.verifyOrderActionTransaction({
+      txHash: input.txHash,
+      orderId: input.orderId,
+      contractId: refundIntent.contractId,
+      method: "refund_order",
+      submittedWallet: input.submittedWallet,
+      rpcUrl: contractSet.rpcUrl,
+      networkPassphrase: contractSet.networkPassphrase,
+    });
+
+    const existingTransaction = await repository.getTransactionByHash(input.txHash);
+    if (existingTransaction) {
+      throw new HttpError(409, "Refund transaction hash has already been recorded", "refund_tx_hash_conflict");
+    }
+
+    const tx = await repository.createTransaction({
+      orderId: input.orderId,
+      txHash: input.txHash,
+      txType: "refund",
+      txStatus: verified.status,
+    });
+
+    const record = await repository.createChainActionRecord({
+      chainActionIntentId: refundIntent.id,
+      orderId: input.orderId,
+      actionType: "refund",
+      txHash: input.txHash,
+      submittedWallet: input.submittedWallet,
+      contractId: refundIntent.contractId,
+      status: verified.status,
+      correlationId: input.correlationId,
+      confirmedAt: verified.status === "confirmed" ? new Date().toISOString() : null,
+      chainLedger: verified.ledger ?? null,
+    });
+
+    if (verified.status === "pending") {
+      return {
+        refund_status: "pending_confirmation" as const,
+        chain_status: "pending" as const,
+        financial_finality: false,
+        order,
+        tx: null,
+        refund_record_id: record.id,
+      };
+    }
+
+    if (verified.status === "failed") {
+      throw new HttpError(409, "Refund transaction failed on-chain", "refund_tx_failed");
+    }
+
+    await repository.updateTransactionByHash(input.txHash, { txStatus: "confirmed" });
+    const refundedOrder = await repository.updateOrderStatus(
+      input.orderId,
+      "Refunded",
+      "Refund transaction confirmed on-chain",
+      {
+        contractId: refundIntent.contractId,
+      },
+    );
+    await repository.updateChainActionRecord(record.id, {
+      status: "confirmed",
+      confirmedAt: new Date().toISOString(),
+      chainLedger: verified.ledger ?? null,
+      correlationId: input.correlationId,
+    });
+
+    return {
+      refund_status: "confirmed" as const,
+      chain_status: "confirmed" as const,
+      financial_finality: true,
+      order: refundedOrder,
+      tx: {
+        ...tx,
+        txStatus: "confirmed",
+      },
+      refund_record_id: record.id,
     };
   }
 }
@@ -179,4 +313,30 @@ function getLatestStatusTime(
 ) {
   const entry = [...history].reverse().find((item) => item.newStatus === status);
   return entry ? new Date(entry.changedAt) : null;
+}
+
+async function replayExistingRefund(
+  record: Awaited<ReturnType<typeof repository.getChainActionRecordByTxHash>>,
+  orderId: string,
+) {
+  if (!record || record.actionType !== "refund") {
+    throw new HttpError(500, "Refund replay failed", "refund_replay_failed");
+  }
+  if (record.orderId !== orderId) {
+    throw new HttpError(409, "Refund transaction hash is already associated with another order", "refund_tx_hash_conflict");
+  }
+
+  const order = await repository.getOrder(orderId);
+  if (!order) {
+    throw new HttpError(404, "Order not found", "order_not_found");
+  }
+
+  return {
+    refund_status: record.status === "confirmed" ? ("confirmed" as const) : ("pending_confirmation" as const),
+    chain_status: record.status,
+    financial_finality: record.status === "confirmed",
+    order,
+    tx: record.status === "confirmed" ? await repository.getTransactionByHash(record.txHash) : null,
+    refund_record_id: record.id,
+  };
 }

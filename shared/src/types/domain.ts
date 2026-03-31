@@ -37,11 +37,15 @@ export interface EvidenceInput {
 }
 
 export interface OracleAttestationPayload {
+  version: "v2";
   orderId: string;
   decision: Extract<OracleDecision, "APPROVE">;
-  confidence: number;
-  issuedAt: string;
-  expiresAt: string;
+  confidenceBps: number;
+  issuedAtSecs: number;
+  expiresAtSecs: number;
+  nonce: string;
+  contractId: string;
+  environment: "staging" | "pilot";
 }
 
 export interface SignedOracleAttestation extends OracleAttestationPayload {

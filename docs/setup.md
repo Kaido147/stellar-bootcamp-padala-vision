@@ -35,11 +35,11 @@ Frontend:
 To enable the real release transaction path:
 
 1. Copy [frontend/.env.example](/home/carl/Documents/stellar-main-project/frontend/.env.example) to `frontend/.env`
-2. Set `VITE_PADALA_ESCROW_CONTRACT_ID` to your deployed Soroban contract ID
-3. Set `VITE_RPC_URL` and `VITE_STELLAR_NETWORK_PASSPHRASE` to the same network as Freighter
+2. Set `VITE_RPC_URL` and `VITE_STELLAR_NETWORK_PASSPHRASE` to the same network as Freighter
+3. Keep `VITE_PADALA_ESCROW_CONTRACT_ID` only as a fallback; the frontend should prefer backend `/api/release/intent` metadata for `contract_id`, `rpc_url`, and `network_passphrase`
 4. Use Freighter on that same network
 
-The frontend will prepare the `submit_release` invocation, ask Freighter to sign it, submit it to Stellar RPC, and then send the real transaction hash back to the backend for audit/history persistence.
+The frontend should call backend `POST /api/release/intent`, receive the finalized v2 release args, submit `submit_release` with Freighter, and then send `tx_hash`, `attestation_nonce`, and `submitted_wallet` back to backend `POST /api/release`.
 
 ## Supabase Wiring
 
@@ -59,4 +59,4 @@ For the oracle:
 
 ## Local Tooling Note
 
-Rust is available in the workspace, but the `soroban` CLI is not currently installed. The contract will be written and unit-tested in Rust first, and deployment scripts can be added once the Soroban CLI is present.
+Rust and the `stellar` CLI are available in the workspace. Contract builds can be run locally with `stellar contract build`.

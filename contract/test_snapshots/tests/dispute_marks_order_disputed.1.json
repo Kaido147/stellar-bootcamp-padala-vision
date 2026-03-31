@@ -141,7 +141,28 @@
         }
       ]
     ],
-    [],
+    [
+      [
+        "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+        {
+          "function": {
+            "contract_fn": {
+              "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4",
+              "function_name": "dispute_order",
+              "args": [
+                {
+                  "u64": "1"
+                },
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
+                }
+              ]
+            }
+          },
+          "sub_invocations": []
+        }
+      ]
+    ],
     []
   ],
   "ledger": {
@@ -244,6 +265,26 @@
               "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
               "key": {
                 "ledger_key_nonce": {
+                  "nonce": "4270020994084947596"
+                }
+              },
+              "durability": "temporary",
+              "val": "void"
+            }
+          },
+          "ext": "v0"
+        },
+        "live_until": 6311999
+      },
+      {
+        "entry": {
+          "last_modified_ledger_seq": 0,
+          "data": {
+            "contract_data": {
+              "ext": "v0",
+              "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+              "key": {
+                "ledger_key_nonce": {
                   "nonce": "4837995959683129791"
                 }
               },
@@ -297,6 +338,14 @@
                 "map": [
                   {
                     "key": {
+                      "symbol": "assigned_at"
+                    },
+                    "val": {
+                      "u64": "1000"
+                    }
+                  },
+                  {
+                    "key": {
                       "symbol": "buyer"
                     },
                     "val": {
@@ -321,6 +370,22 @@
                   },
                   {
                     "key": {
+                      "symbol": "dispute_last_activity_at"
+                    },
+                    "val": {
+                      "u64": "1000"
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "disputed_at"
+                    },
+                    "val": {
+                      "u64": "1000"
+                    }
+                  },
+                  {
+                    "key": {
                       "symbol": "expires_at"
                     },
                     "val": {
@@ -337,6 +402,12 @@
                   },
                   {
                     "key": {
+                      "symbol": "in_transit_at"
+                    },
+                    "val": "void"
+                  },
+                  {
+                    "key": {
                       "symbol": "item_amount"
                     },
                     "val": {
@@ -348,7 +419,7 @@
                       "symbol": "oracle_pubkey"
                     },
                     "val": {
-                      "bytes": "65f8545ab6f70b79b9f070e1e143e92ab791f8818783aad0fe82c4c7084805d5"
+                      "bytes": "d7fa16ccab260376e16e70dc11b98c901d46b189c1281d13156c35e1df2378b3"
                     }
                   },
                   {
@@ -430,10 +501,18 @@
                         "map": [
                           {
                             "key": {
+                              "symbol": "environment"
+                            },
+                            "val": {
+                              "string": "staging"
+                            }
+                          },
+                          {
+                            "key": {
                               "symbol": "oracle_pubkey"
                             },
                             "val": {
-                              "bytes": "65f8545ab6f70b79b9f070e1e143e92ab791f8818783aad0fe82c4c7084805d5"
+                              "bytes": "d7fa16ccab260376e16e70dc11b98c901d46b189c1281d13156c35e1df2378b3"
                             }
                           },
                           {
