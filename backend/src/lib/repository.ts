@@ -165,6 +165,25 @@ export interface DisputeEventRecord {
   createdAt: string;
 }
 
+export interface RefundIntentRecord {
+  id: string;
+  orderId: string;
+  actorUserId: string;
+  actorWallet: string | null;
+  actorRoles: string[];
+  contractId: string;
+  environment: "staging" | "pilot";
+  eligibilityBasis:
+    | "rejected"
+    | "timeout_funded_unaccepted"
+    | "timeout_assigned_not_in_transit"
+    | "timeout_in_transit"
+    | "dispute_inactive";
+  eligibleAt: string;
+  correlationId: string;
+  createdAt: string;
+}
+
 export interface Repository {
   readonly mode: "memory" | "supabase";
   generateOrderId(): string;
@@ -240,6 +259,7 @@ export interface Repository {
     >,
   ): Promise<DisputeRecord>;
   createDisputeEvent(input: Omit<DisputeEventRecord, "id" | "createdAt">): Promise<DisputeEventRecord>;
+  createRefundIntent(input: Omit<RefundIntentRecord, "createdAt">): Promise<RefundIntentRecord>;
 }
 
 export class InMemoryRepository implements Repository {
@@ -257,6 +277,7 @@ export class InMemoryRepository implements Repository {
   private releaseRecords = new Map<string, ReleaseRecord>();
   private disputes = new Map<string, DisputeRecord>();
   private disputeEvents: DisputeEventRecord[] = [];
+  private refundIntents = new Map<string, RefundIntentRecord>();
   private nextOrderId = 1;
 
   generateOrderId(): string {
@@ -662,6 +683,16 @@ export class InMemoryRepository implements Repository {
     this.disputeEvents.push(record);
     return record;
   }
+
+  async createRefundIntent(input: Omit<RefundIntentRecord, "createdAt">): Promise<RefundIntentRecord> {
+    const record: RefundIntentRecord = {
+      ...input,
+      createdAt: new Date().toISOString(),
+    };
+
+    this.refundIntents.set(record.id, record);
+    return record;
+  }
 }
 
 type OrderRow = {
@@ -842,6 +873,20 @@ type DisputeEventRow = {
   reason: string;
   note: string | null;
   resolution: "release" | "refund" | "reject_dispute" | null;
+  correlation_id: string;
+  created_at: string;
+};
+
+type RefundIntentRow = {
+  id: string;
+  order_id: string;
+  actor_user_id: string;
+  actor_wallet: string | null;
+  actor_roles_json: string[] | string;
+  contract_id: string;
+  environment: "staging" | "pilot";
+  eligibility_basis: RefundIntentRecord["eligibilityBasis"];
+  eligible_at: string;
   correlation_id: string;
   created_at: string;
 };
@@ -1613,6 +1658,31 @@ class SupabaseRepository implements Repository {
     return mapDisputeEventRow(data);
   }
 
+  async createRefundIntent(input: Omit<RefundIntentRecord, "createdAt">): Promise<RefundIntentRecord> {
+    const { data, error } = await this.client
+      .from("refund_intents")
+      .insert({
+        id: input.id,
+        order_id: input.orderId,
+        actor_user_id: input.actorUserId,
+        actor_wallet: input.actorWallet,
+        actor_roles_json: input.actorRoles,
+        contract_id: input.contractId,
+        environment: input.environment,
+        eligibility_basis: input.eligibilityBasis,
+        eligible_at: input.eligibleAt,
+        correlation_id: input.correlationId,
+      })
+      .select("*")
+      .single<RefundIntentRow>();
+
+    if (error || !data) {
+      throw new Error(`Failed to create refund intent in Supabase: ${error?.message ?? "unknown error"}`);
+    }
+
+    return mapRefundIntentRow(data);
+  }
+
   private async insertStatusHistory(row: Omit<StatusHistoryRow, "id">) {
     const { error } = await this.client.from("order_status_history").insert({
       id: uuid(),
@@ -1860,6 +1930,22 @@ function mapDisputeEventRow(row: DisputeEventRow): DisputeEventRecord {
     reason: row.reason,
     note: row.note,
     resolution: row.resolution,
+    correlationId: row.correlation_id,
+    createdAt: row.created_at,
+  };
+}
+
+function mapRefundIntentRow(row: RefundIntentRow): RefundIntentRecord {
+  return {
+    id: row.id,
+    orderId: row.order_id,
+    actorUserId: row.actor_user_id,
+    actorWallet: row.actor_wallet,
+    actorRoles: Array.isArray(row.actor_roles_json) ? row.actor_roles_json : [],
+    contractId: row.contract_id,
+    environment: row.environment,
+    eligibilityBasis: row.eligibility_basis,
+    eligibleAt: row.eligible_at,
     correlationId: row.correlation_id,
     createdAt: row.created_at,
   };
