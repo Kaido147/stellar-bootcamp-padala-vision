@@ -9,16 +9,9 @@ import type {
   BuyerListOrdersResponse,
   BuyerOrderDetailResponse,
   BuyerReissueConfirmationResponse,
-  CreateOrderRequest,
-  CreateOrderResponse,
   DeliveryConfirmationViewResponse,
   EnterWorkspaceSessionRequest,
   EnterWorkspaceSessionResponse,
-  EvidenceSubmitRequest,
-  EvidenceSubmitResponse,
-  EvidenceUploadResponse,
-  FundedJobsResponse,
-  GetOrderResponse,
   GetWorkspaceSessionResponse,
   LogoutWorkspaceSessionResponse,
   OperatorDisputeDetailResponse,
@@ -28,13 +21,8 @@ import type {
   OperatorResolveDisputeResponse,
   OperatorReviewDetailResponse,
   OperatorReissueConfirmationResponse,
-  OrderHistoryResponse,
   RejectDeliveryConfirmationRequest,
   RejectDeliveryConfirmationResponse,
-  ReleaseIntentRequest,
-  ReleaseIntentResponse,
-  ReleaseRecordRequest,
-  ReleaseRecordResponse,
   RiderAcceptJobResponse,
   RiderCreateProofUploadResponse,
   RiderJobDetailResponse,
@@ -308,58 +296,6 @@ export const workflowApi = {
 };
 
 export const legacyApi = {
-  createOrder: (payload: CreateOrderRequest) =>
-    legacyRequest<CreateOrderResponse>("/orders", {
-      method: "POST",
-      headers: createIdempotencyHeaders("create-order", stableStringify(payload)),
-      body: JSON.stringify(payload),
-    }),
-  getOrder: (orderId: string) => legacyRequest<GetOrderResponse>(`/orders/${orderId}`),
-  getHistory: (orderId: string) => legacyRequest<OrderHistoryResponse>(`/orders/${orderId}/history`),
-  listFundedJobs: () => legacyRequest<FundedJobsResponse>("/jobs/funded"),
-  fundOrder: (orderId: string) =>
-    legacyRequest<{ order: GetOrderResponse["order"] }>(`/orders/${orderId}/fund`, {
-      method: "POST",
-    }),
-  acceptJob: (orderId: string, riderWallet: string) =>
-    legacyRequest<{ order: GetOrderResponse["order"] }>(`/orders/${orderId}/accept`, {
-      method: "POST",
-      headers: createIdempotencyHeaders("rider-accept", orderId, riderWallet),
-      body: JSON.stringify({ rider_wallet: riderWallet }),
-    }),
-  markInTransit: (orderId: string, riderWallet: string) =>
-    legacyRequest<{ order: GetOrderResponse["order"] }>(`/orders/${orderId}/in-transit`, {
-      method: "POST",
-      headers: createIdempotencyHeaders("rider-in-transit", orderId, riderWallet),
-      body: JSON.stringify({ rider_wallet: riderWallet }),
-    }),
-  uploadEvidenceFile: async (orderId: string, riderWallet: string, file: File) => {
-    const formData = new FormData();
-    formData.append("order_id", orderId);
-    formData.append("rider_wallet", riderWallet);
-    formData.append("file", file);
-
-    return legacyRequest<EvidenceUploadResponse>("/evidence/upload", {
-      method: "POST",
-      body: formData,
-    });
-  },
-  submitEvidence: (payload: EvidenceSubmitRequest) =>
-    legacyRequest<EvidenceSubmitResponse>("/evidence/submit", {
-      method: "POST",
-      headers: createIdempotencyHeaders("rider-evidence-submit", payload.order_id, payload.storage_path),
-      body: JSON.stringify(payload),
-    }),
-  createReleaseIntent: (payload: ReleaseIntentRequest) =>
-    legacyRequest<ReleaseIntentResponse>("/release/intent", {
-      method: "POST",
-      body: JSON.stringify(payload),
-    }),
-  recordRelease: (payload: ReleaseRecordRequest) =>
-    legacyRequest<ReleaseRecordResponse>("/release", {
-      method: "POST",
-      body: JSON.stringify(payload),
-    }),
   createWalletChallenge: (walletAddress: string) =>
     legacyRequest<{
       challenge_id: string;
@@ -397,72 +333,4 @@ export const legacyApi = {
       headers: createIdempotencyHeaders(payload.challenge_id),
       body: JSON.stringify(payload),
     }),
-  createDispute: (payload: {
-    order_id: string;
-    reason_code: string;
-    description: string;
-    evidence_refs?: string[];
-  }) =>
-    legacyRequest<{
-      dispute_id: string;
-      order_id: string;
-      dispute_status: string;
-      order_status: string;
-      dispute: unknown;
-    }>("/disputes", {
-      method: "POST",
-      body: JSON.stringify(payload),
-    }),
-  resolveDispute: (
-    disputeId: string,
-    payload: {
-      resolution: "release" | "refund" | "reject_dispute";
-      reason: string;
-      note: string;
-      tx_hash?: string;
-      attestation_nonce?: string;
-      submitted_wallet?: string;
-    },
-  ) =>
-    legacyRequest<{
-      dispute_id: string;
-      resolution: string;
-      resolution_status: "pending" | "resolved";
-      order_status: string;
-      next_action: string | null;
-    }>(`/disputes/${disputeId}/resolve`, {
-      method: "POST",
-      body: JSON.stringify(payload),
-    }),
-  createRefundIntent: (orderId: string) =>
-    legacyRequest<{
-      refund_intent_id: string;
-      order_id: string;
-      contract_id: string;
-      network_passphrase: string;
-      rpc_url: string;
-      method: "refund_order";
-      args: {
-        order_id: string;
-      };
-      eligibility_basis: string;
-      eligible_at: string;
-    }>("/refunds/intent", {
-      method: "POST",
-      body: JSON.stringify({ order_id: orderId }),
-    }),
-  reconcileOrder: (orderId: string, forceRefresh = false) =>
-    legacyRequest<{ order_status: string; chain_state: string; actions_taken: string[] }>(
-      `/reconcile/orders/${orderId}`,
-      {
-        method: "POST",
-        body: JSON.stringify({ force_refresh: forceRefresh }),
-      },
-    ),
-};
-
-// Compatibility alias for any remaining transitional callers.
-export const api = {
-  ...workflowApi,
-  ...legacyApi,
 };
