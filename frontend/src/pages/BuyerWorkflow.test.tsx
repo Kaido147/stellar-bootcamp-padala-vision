@@ -10,6 +10,7 @@ vi.mock("../lib/api", () => ({
     getBuyerWorkflowOrder: vi.fn(),
     createBuyerFundingIntent: vi.fn(),
     confirmBuyerFunding: vi.fn(),
+    requestBuyerFundingTopUp: vi.fn(),
   },
 }));
 
@@ -17,8 +18,27 @@ vi.mock("../hooks/useWallet", () => ({
   useWallet: vi.fn(),
 }));
 
+vi.mock("../lib/soroban", () => ({
+  prepareContractInvocation: vi.fn(),
+  submitPreparedTransaction: vi.fn(),
+  toU64ScVal: vi.fn((value: bigint) => ({ type: "u64", value })),
+  waitForTransactionFinality: vi.fn(),
+}));
+
+vi.mock("../lib/stellar", () => ({
+  loadHorizonAccount: vi.fn(),
+  prepareTrustlineTransaction: vi.fn(),
+  submitClassicTransaction: vi.fn(),
+}));
+
 import { workflowApi } from "../lib/api";
 import { useWallet } from "../hooks/useWallet";
+import {
+  prepareContractInvocation,
+  submitPreparedTransaction,
+  waitForTransactionFinality,
+} from "../lib/soroban";
+import { loadHorizonAccount } from "../lib/stellar";
 
 describe("buyer workflow pages", () => {
   beforeEach(() => {
@@ -26,6 +46,21 @@ describe("buyer workflow pages", () => {
 
     vi.mocked(useWallet).mockReturnValue({
       address: "GBUYER",
+      networkMismatch: false,
+      networkPassphrase: "Test Network",
+      connectWallet: vi.fn().mockResolvedValue("GBUYER"),
+      signTransaction: vi.fn().mockResolvedValue("SIGNED_XDR"),
+    } as never);
+    vi.mocked(loadHorizonAccount).mockResolvedValue({
+      balances: [
+        { asset_type: "native", balance: "10.0000000" },
+        {
+          asset_type: "credit_alphanum4",
+          asset_code: "PUSD",
+          asset_issuer: "GISSUER",
+          balance: "125.0000000",
+        },
+      ],
     } as never);
   });
 
@@ -45,7 +80,7 @@ describe("buyer workflow pages", () => {
           lastEventType: "buyer_claimed",
           lastEventAt: "2026-03-31T00:00:00.000Z",
           dueAt: "2026-04-01T00:00:00.000Z",
-          nextAction: "buyer_confirmed_funding",
+          nextAction: "buyer_submitted_funding",
           hasActiveDispute: false,
           requiresManualReview: false,
         },
@@ -88,6 +123,19 @@ describe("buyer workflow pages", () => {
         lastEventType: "buyer_claimed",
         lastEventAt: "2026-03-31T00:00:00.000Z",
         relation: "buyer_owner",
+        chain: {
+          contractId: "contract-1",
+          onChainOrderId: "77",
+          sellerWallet: "GSELLER",
+          buyerWallet: "GBUYER",
+          riderWallet: null,
+          fundingStatus: "not_started",
+          fundingTxHash: null,
+          orderCreatedTxHash: "create-hash-1",
+          lastChainReconciliationStatus: null,
+          lastChainReconciledAt: null,
+          lastChainError: null,
+        },
       },
       timeline: [],
       availableActions: [],
@@ -95,18 +143,51 @@ describe("buyer workflow pages", () => {
     });
     vi.mocked(workflowApi.createBuyerFundingIntent).mockResolvedValue({
       orderId: "order-1",
+      actionIntentId: "intent-1",
       actionType: "fund",
       method: "fund_order",
       contractId: "contract-1",
+      tokenContractId: "token-1",
+      tokenDecimals: 7,
+      onChainOrderId: "77",
+      buyerWallet: "GBUYER",
+      fundingStatus: "not_started",
+      existingFundingTxHash: null,
       rpcUrl: "https://rpc.example",
       networkPassphrase: "Test Network",
+      token: {
+        contractId: "token-1",
+        symbol: "PUSD",
+        name: "PUSD:GISSUER",
+        decimals: 7,
+        adminAddress: "GISSUER",
+        assetCode: "PUSD",
+        assetIssuer: "GISSUER",
+        isStellarAssetContract: true,
+        trustlineRequired: true,
+      },
+      setup: {
+        demoTopUpAvailable: true,
+        xlmFriendbotUrl: "https://friendbot.stellar.org/?addr=GBUYER",
+      },
       args: {},
       replayKey: "replay-1",
     });
     vi.mocked(workflowApi.confirmBuyerFunding).mockResolvedValue({
       orderId: "order-1",
       status: "funded",
+      txHash: "fund-hash-1",
+      chainStatus: "confirmed",
     });
+    vi.mocked(prepareContractInvocation).mockResolvedValue({
+      toXDR: () => "PREPARED_XDR",
+    } as never);
+    vi.mocked(submitPreparedTransaction).mockResolvedValue({
+      server: { getTransaction: vi.fn() },
+      txHash: "fund-hash-1",
+      sendStatus: "PENDING",
+    } as never);
+    vi.mocked(waitForTransactionFinality).mockResolvedValue({ status: "SUCCESS" } as never);
 
     render(
       <MemoryRouter initialEntries={["/buyer/orders/order-1/fund"]}>
@@ -118,12 +199,16 @@ describe("buyer workflow pages", () => {
     );
 
     expect(await screen.findByRole("heading", { name: "Funding Intent" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /Record demo funding/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /Fund with PUSD/i }));
 
     expect(await screen.findByText("buyer order detail")).toBeInTheDocument();
     expect(workflowApi.confirmBuyerFunding).toHaveBeenCalledWith(
       "order-1",
-      expect.objectContaining({ submittedWallet: "GBUYER" }),
+      expect.objectContaining({
+        actionIntentId: "intent-1",
+        txHash: "fund-hash-1",
+        submittedWallet: "GBUYER",
+      }),
     );
   });
 });

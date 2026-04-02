@@ -13,9 +13,9 @@ export const buyerInviteClaimSchema = z.object({
   displayName: z.string().min(1).optional().nullable(),
 });
 
-export const sellerCreateWorkflowOrderSchema = z.object({
-  buyerDisplayName: z.string().min(1),
-  buyerContactLabel: z.string().min(1).optional().nullable(),
+export const sellerCreateWorkflowOrderIntentSchema = z.object({
+  sellerWallet: z.string().min(1),
+  buyerWallet: z.string().min(1),
   itemDescription: z.string().min(1),
   pickupLabel: z.string().min(1),
   dropoffLabel: z.string().min(1),
@@ -25,7 +25,15 @@ export const sellerCreateWorkflowOrderSchema = z.object({
   fundingDeadlineAt: z.string().datetime(),
 });
 
+export const sellerCreateWorkflowOrderSchema = sellerCreateWorkflowOrderIntentSchema.extend({
+  buyerDisplayName: z.string().min(1),
+  buyerContactLabel: z.string().min(1).optional().nullable(),
+  txHash: z.string().min(1),
+  submittedWallet: z.string().min(1),
+});
+
 export const buyerConfirmFundingSchema = z.object({
+  actionIntentId: z.string().uuid().optional(),
   txHash: z.string().min(1),
   submittedWallet: z.string().min(1),
 });

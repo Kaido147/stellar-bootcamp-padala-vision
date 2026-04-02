@@ -3,6 +3,8 @@ import { formatWorkflowStatus } from "../lib/workflow";
 
 const toneMap: Record<DurableOrderStatus, string> = {
   awaiting_funding: "border border-line bg-white/[0.06] text-ink",
+  funding_pending: "bg-sky-600 text-white",
+  funding_failed: "bg-red-600 text-white",
   funded: "bg-gold text-night",
   rider_assigned: "bg-coral text-night",
   in_transit: "bg-moss text-night",

@@ -32,7 +32,7 @@ export function WorkflowOrderDetailContent({
       >
         <div className="grid gap-3 sm:grid-cols-3">
           <SummaryChip label="Order" value={order.orderCode} />
-          <SummaryChip label="Escrow total" value={`${order.totalAmount} USDC`} />
+          <SummaryChip label="Escrow total" value={`${order.totalAmount} PUSD`} />
           <SummaryChip
             label="Buyer deadline"
             value={order.buyerConfirmationDueAt ? formatRelativeCountdown(order.buyerConfirmationDueAt) : "Not active"}
@@ -58,9 +58,9 @@ export function WorkflowOrderDetailContent({
       <Card title="Financial Summary" subtitle="The escrow amounts used for this workflow order.">
         <KeyValueList
           items={[
-            { label: "Item amount", value: `${order.itemAmount} USDC` },
-            { label: "Delivery fee", value: `${order.deliveryFee} USDC` },
-            { label: "Escrow total", value: `${order.totalAmount} USDC` },
+            { label: "Item amount", value: `${order.itemAmount} PUSD` },
+            { label: "Delivery fee", value: `${order.deliveryFee} PUSD` },
+            { label: "Escrow total", value: `${order.totalAmount} PUSD` },
             { label: "Current relation", value: order.relation.replace(/_/g, " ") },
           ]}
         />

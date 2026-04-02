@@ -4,6 +4,7 @@ import {
   getWalletSnapshot,
   requestWalletAccess,
   signWalletMessage,
+  signWalletTransaction,
 } from "../lib/stellar";
 
 interface WalletContextValue {
@@ -19,6 +20,7 @@ interface WalletContextValue {
   connectWallet: () => Promise<string>;
   refreshWallet: () => Promise<void>;
   signMessage: (message: string) => Promise<string>;
+  signTransaction: (transactionXdr: string) => Promise<string>;
 }
 
 const WalletContext = createContext<WalletContextValue | null>(null);
@@ -79,6 +81,13 @@ export function WalletProvider({ children }: PropsWithChildren) {
         }
 
         return signWalletMessage(message, address, networkPassphrase ?? expectedNetworkPassphrase);
+      },
+      signTransaction: async (transactionXdr) => {
+        if (!address) {
+          throw new Error("Connect Freighter before signing.");
+        }
+
+        return signWalletTransaction(transactionXdr, address, networkPassphrase ?? expectedNetworkPassphrase);
       },
     }),
     [

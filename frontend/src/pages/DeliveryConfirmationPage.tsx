@@ -89,9 +89,9 @@ export function DeliveryConfirmationPage() {
 
       <Card title="Order Summary" subtitle="Review the delivery and make an explicit buyer decision.">
         <div className="grid gap-3 sm:grid-cols-3">
-          <SummaryChip label="Item amount" value={`${view.itemAmount} USDC`} />
-          <SummaryChip label="Delivery fee" value={`${view.deliveryFee} USDC`} />
-          <SummaryChip label="Escrow total" value={`${view.totalAmount} USDC`} />
+          <SummaryChip label="Item amount" value={`${view.itemAmount} PUSD`} />
+          <SummaryChip label="Delivery fee" value={`${view.deliveryFee} PUSD`} />
+          <SummaryChip label="Escrow total" value={`${view.totalAmount} PUSD`} />
         </div>
       </Card>
 

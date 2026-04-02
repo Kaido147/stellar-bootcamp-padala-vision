@@ -34,6 +34,10 @@ export function describeWorkflowStatus(status: DurableOrderStatus) {
   switch (status) {
     case "awaiting_funding":
       return "Waiting for the buyer to fund escrow before fulfillment can begin.";
+    case "funding_pending":
+      return "A real funding transaction was submitted and is still being confirmed on chain.";
+    case "funding_failed":
+      return "The last funding attempt failed on chain. The buyer can retry with a fresh transaction.";
     case "funded":
       return "Escrow is funded and ready for rider assignment.";
     case "rider_assigned":
@@ -68,7 +72,9 @@ export function getWorkflowStatusTone(status: DurableOrderStatus) {
     case "manual_review":
     case "dispute_open":
     case "refund_pending":
+    case "funding_failed":
       return "attention";
+    case "funding_pending":
     case "awaiting_buyer_confirmation":
     case "release_pending":
     case "funded":

@@ -45,7 +45,7 @@ export function RiderJobsPage() {
                   {job.pickupLabel} to {job.dropoffLabel}
                 </div>
               </div>
-              <div className="quiet-pill">{`${job.totalAmount} USDC`}</div>
+              <div className="quiet-pill">{`${job.totalAmount} PUSD`}</div>
             </div>
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <SummaryChip label="Funded at" value={formatDateTime(job.fundingConfirmedAt)} />

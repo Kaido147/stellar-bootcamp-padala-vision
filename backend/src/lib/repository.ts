@@ -241,7 +241,32 @@ export interface ReconciliationEventRecord {
 export interface Repository {
   readonly mode: "memory" | "supabase";
   generateOrderId(): string;
-  createOrder(input: Omit<OrderRecord, "createdAt" | "updatedAt">): Promise<OrderRecord>;
+  createOrder(
+    input: Omit<
+      OrderRecord,
+      | "createdAt"
+      | "updatedAt"
+      | "onChainOrderId"
+      | "orderCreatedTxHash"
+      | "fundingTxHash"
+      | "fundingStatus"
+      | "lastChainReconciliationStatus"
+      | "lastChainReconciledAt"
+      | "lastChainError"
+    > &
+      Partial<
+        Pick<
+          OrderRecord,
+          | "onChainOrderId"
+          | "orderCreatedTxHash"
+          | "fundingTxHash"
+          | "fundingStatus"
+          | "lastChainReconciliationStatus"
+          | "lastChainReconciledAt"
+          | "lastChainError"
+        >
+      >,
+  ): Promise<OrderRecord>;
   getOrder(id: string): Promise<OrderRecord | null>;
   listFundedJobs(): Promise<OrderRecord[]>;
   updateOrderStatus(
@@ -363,10 +388,42 @@ export class InMemoryRepository implements Repository {
     return String(value);
   }
 
-  async createOrder(input: Omit<OrderRecord, "createdAt" | "updatedAt">): Promise<OrderRecord> {
+  async createOrder(
+    input: Omit<
+      OrderRecord,
+      | "createdAt"
+      | "updatedAt"
+      | "onChainOrderId"
+      | "orderCreatedTxHash"
+      | "fundingTxHash"
+      | "fundingStatus"
+      | "lastChainReconciliationStatus"
+      | "lastChainReconciledAt"
+      | "lastChainError"
+    > &
+      Partial<
+        Pick<
+          OrderRecord,
+          | "onChainOrderId"
+          | "orderCreatedTxHash"
+          | "fundingTxHash"
+          | "fundingStatus"
+          | "lastChainReconciliationStatus"
+          | "lastChainReconciledAt"
+          | "lastChainError"
+        >
+      >,
+  ): Promise<OrderRecord> {
     const now = new Date().toISOString();
     const order: OrderRecord = {
       ...input,
+      onChainOrderId: input.onChainOrderId ?? null,
+      orderCreatedTxHash: input.orderCreatedTxHash ?? null,
+      fundingTxHash: input.fundingTxHash ?? null,
+      fundingStatus: input.fundingStatus ?? "not_started",
+      lastChainReconciliationStatus: input.lastChainReconciliationStatus ?? null,
+      lastChainReconciledAt: input.lastChainReconciledAt ?? null,
+      lastChainError: input.lastChainError ?? null,
       createdAt: now,
       updatedAt: now,
     };
@@ -893,6 +950,7 @@ export class InMemoryRepository implements Repository {
 type OrderRow = {
   id: string;
   contract_id: string | null;
+  on_chain_order_id: string | null;
   seller_wallet: string;
   buyer_wallet: string;
   rider_wallet: string | null;
@@ -905,6 +963,12 @@ type OrderRow = {
   funded_at: string | null;
   released_at: string | null;
   expires_at: string;
+  order_created_tx_hash: string | null;
+  funding_tx_hash: string | null;
+  funding_status: "not_started" | "pending" | "confirmed" | "failed";
+  last_chain_reconciliation_status: string | null;
+  last_chain_reconciled_at: string | null;
+  last_chain_error: string | null;
 };
 
 type EvidenceRow = {
@@ -1153,12 +1217,38 @@ class SupabaseRepository implements Repository {
     return `${millis}${randomSuffix}`;
   }
 
-  async createOrder(input: Omit<OrderRecord, "createdAt" | "updatedAt">): Promise<OrderRecord> {
+  async createOrder(
+    input: Omit<
+      OrderRecord,
+      | "createdAt"
+      | "updatedAt"
+      | "onChainOrderId"
+      | "orderCreatedTxHash"
+      | "fundingTxHash"
+      | "fundingStatus"
+      | "lastChainReconciliationStatus"
+      | "lastChainReconciledAt"
+      | "lastChainError"
+    > &
+      Partial<
+        Pick<
+          OrderRecord,
+          | "onChainOrderId"
+          | "orderCreatedTxHash"
+          | "fundingTxHash"
+          | "fundingStatus"
+          | "lastChainReconciliationStatus"
+          | "lastChainReconciledAt"
+          | "lastChainError"
+        >
+      >,
+  ): Promise<OrderRecord> {
     const { data, error } = await this.client
       .from("orders")
       .insert({
         id: input.id,
         contract_id: input.contractId,
+        on_chain_order_id: input.onChainOrderId ?? null,
         seller_wallet: input.sellerWallet,
         buyer_wallet: input.buyerWallet,
         rider_wallet: input.riderWallet,
@@ -1169,6 +1259,12 @@ class SupabaseRepository implements Repository {
         funded_at: input.fundedAt,
         released_at: input.releasedAt,
         expires_at: input.expiresAt,
+        order_created_tx_hash: input.orderCreatedTxHash ?? null,
+        funding_tx_hash: input.fundingTxHash ?? null,
+        funding_status: input.fundingStatus ?? "not_started",
+        last_chain_reconciliation_status: input.lastChainReconciliationStatus ?? null,
+        last_chain_reconciled_at: input.lastChainReconciledAt ?? null,
+        last_chain_error: input.lastChainError ?? null,
       })
       .select("*")
       .single<OrderRow>();
@@ -1233,6 +1329,7 @@ class SupabaseRepository implements Repository {
       .from("orders")
       .update({
         contract_id: patch?.contractId ?? current.contractId,
+        on_chain_order_id: patch?.onChainOrderId ?? current.onChainOrderId,
         seller_wallet: patch?.sellerWallet ?? current.sellerWallet,
         buyer_wallet: patch?.buyerWallet ?? current.buyerWallet,
         rider_wallet: patch?.riderWallet ?? current.riderWallet,
@@ -1244,6 +1341,12 @@ class SupabaseRepository implements Repository {
         funded_at: patch?.fundedAt ?? current.fundedAt,
         released_at: patch?.releasedAt ?? current.releasedAt,
         expires_at: patch?.expiresAt ?? current.expiresAt,
+        order_created_tx_hash: patch?.orderCreatedTxHash ?? current.orderCreatedTxHash,
+        funding_tx_hash: patch?.fundingTxHash ?? current.fundingTxHash,
+        funding_status: patch?.fundingStatus ?? current.fundingStatus,
+        last_chain_reconciliation_status: patch?.lastChainReconciliationStatus ?? current.lastChainReconciliationStatus,
+        last_chain_reconciled_at: patch?.lastChainReconciledAt ?? current.lastChainReconciledAt,
+        last_chain_error: patch?.lastChainError ?? current.lastChainError,
       })
       .eq("id", orderId)
       .select("*")
@@ -2252,6 +2355,7 @@ function mapOrderRow(row: OrderRow): OrderRecord {
   return {
     id: row.id,
     contractId: row.contract_id,
+    onChainOrderId: row.on_chain_order_id,
     sellerWallet: row.seller_wallet,
     buyerWallet: row.buyer_wallet,
     riderWallet: row.rider_wallet,
@@ -2264,6 +2368,12 @@ function mapOrderRow(row: OrderRow): OrderRecord {
     fundedAt: row.funded_at,
     releasedAt: row.released_at,
     expiresAt: row.expires_at,
+    orderCreatedTxHash: row.order_created_tx_hash,
+    fundingTxHash: row.funding_tx_hash,
+    fundingStatus: row.funding_status,
+    lastChainReconciliationStatus: row.last_chain_reconciliation_status,
+    lastChainReconciledAt: row.last_chain_reconciled_at,
+    lastChainError: row.last_chain_error,
   };
 }
 

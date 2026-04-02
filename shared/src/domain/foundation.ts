@@ -39,13 +39,40 @@ export const TOKEN_LIFECYCLE_POLICIES = {
 
 export const WORKFLOW_TRANSITIONS = [
   {
-    action: "buyer_confirmed_funding",
+    action: "buyer_submitted_funding",
     from: "awaiting_funding",
-    to: "funded",
+    to: "funding_pending",
     trigger: "actor",
     allowedRoles: ["buyer"],
+    emitsEvent: "funding_submitted",
+    description: "Buyer submitted a funding transaction for verification.",
+  },
+  {
+    action: "buyer_submitted_funding",
+    from: "funding_failed",
+    to: "funding_pending",
+    trigger: "actor",
+    allowedRoles: ["buyer"],
+    emitsEvent: "funding_submitted",
+    description: "Buyer retried funding after a failed funding attempt.",
+  },
+  {
+    action: "system_confirmed_funding",
+    from: "funding_pending",
+    to: "funded",
+    trigger: "system",
+    allowedRoles: [],
     emitsEvent: "funding_confirmed",
-    description: "Buyer confirms funding for an awaiting-funding order.",
+    description: "System confirmed the buyer funding transaction on chain.",
+  },
+  {
+    action: "system_failed_funding",
+    from: "funding_pending",
+    to: "funding_failed",
+    trigger: "system",
+    allowedRoles: [],
+    emitsEvent: "funding_failed",
+    description: "System marked the funding attempt as failed after chain verification.",
   },
   {
     action: "seller_cancelled_order",

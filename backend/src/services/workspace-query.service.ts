@@ -7,7 +7,7 @@ export class WorkspaceQueryService {
   async listSellerWorkspace(actorId: string) {
     const orders = await this.repository.listWorkflowOrdersBySeller(actorId);
     return {
-      needsFunding: filterStatuses(orders, ["awaiting_funding"]),
+      needsFunding: filterStatuses(orders, ["awaiting_funding", "funding_pending", "funding_failed"]),
       activeDelivery: filterStatuses(orders, ["funded", "rider_assigned", "in_transit"]),
       awaitingBuyerConfirmation: filterStatuses(orders, ["awaiting_buyer_confirmation"]),
       needsAttention: filterStatuses(orders, ["manual_review", "dispute_open", "release_pending", "refund_pending"]),
@@ -18,7 +18,7 @@ export class WorkspaceQueryService {
   async listBuyerWorkspace(actorId: string) {
     const orders = await this.repository.listWorkflowOrdersByBuyer(actorId);
     return {
-      toFund: filterStatuses(orders, ["awaiting_funding"]),
+      toFund: filterStatuses(orders, ["awaiting_funding", "funding_pending", "funding_failed"]),
       inProgress: filterStatuses(orders, ["funded", "rider_assigned", "in_transit", "manual_review", "dispute_open", "release_pending", "refund_pending"]),
       needsYourConfirmation: filterStatuses(orders, ["awaiting_buyer_confirmation"]),
       closed: filterStatuses(orders, ["released", "refunded", "cancelled", "expired"]),

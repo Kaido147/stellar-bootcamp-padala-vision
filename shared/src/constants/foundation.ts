@@ -10,6 +10,8 @@ export const TOKEN_PURPOSES = ["claim_workspace", "view_confirmation", "approve_
 
 export const DURABLE_ORDER_STATUSES = [
   "awaiting_funding",
+  "funding_pending",
+  "funding_failed",
   "funded",
   "rider_assigned",
   "in_transit",
@@ -28,10 +30,13 @@ export const FINAL_DURABLE_ORDER_STATUSES = ["released", "refunded", "cancelled"
 
 export const ORDER_EVENT_TYPES = [
   "order_created",
+  "order_created_on_chain",
   "buyer_invite_issued",
   "buyer_claimed",
   "funding_intent_created",
+  "funding_submitted",
   "funding_confirmed",
+  "funding_failed",
   "rider_accepted",
   "parcel_picked_up",
   "proof_uploaded",
@@ -53,7 +58,9 @@ export const ORDER_EVENT_TYPES = [
 ] as const;
 
 export const WORKFLOW_TRANSITION_ACTIONS = [
-  "buyer_confirmed_funding",
+  "buyer_submitted_funding",
+  "system_confirmed_funding",
+  "system_failed_funding",
   "seller_cancelled_order",
   "system_expired_unfunded_order",
   "rider_accepted_order",

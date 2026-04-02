@@ -32,7 +32,7 @@ export function WorkflowOrderCard({
       <div className="mt-3 text-sm leading-6 text-ink/64">{describeWorkflowStatus(order.status)}</div>
 
       <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Stat label="Total" value={`${order.totalAmount} USDC`} />
+        <Stat label="Total" value={`${order.totalAmount} PUSD`} />
         <Stat label="Latest event" value={formatWorkflowEvent(order.lastEventType)} />
         <Stat
           label="Due"

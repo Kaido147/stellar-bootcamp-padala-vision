@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { Networks, StrKey } from "@stellar/stellar-sdk";
 import type {
   ActorRole,
   ActorSummary,
@@ -8,6 +9,7 @@ import type {
   BuyerConfirmFundingRequest,
   BuyerConfirmFundingResponse,
   BuyerCreateFundingIntentResponse,
+  BuyerFundingTopUpResponse,
   BuyerListOrdersResponse,
   BuyerOrderDetailResponse,
   BuyerReissueConfirmationResponse,
@@ -39,6 +41,7 @@ import type {
   RiderSubmitProofRequest,
   RiderSubmitProofResponse,
   SellerCancelOrderResponse,
+  SellerCreateOrderIntentRequest,
   SellerCreateOrderRequest,
   SellerCreateOrderResponse,
   SellerListOrdersResponse,
@@ -54,14 +57,17 @@ import { HttpError } from "../lib/errors.js";
 import { foundationRepository, type StoredActorRecord, type WorkflowOrderRecord } from "../lib/foundation-repository.js";
 import { hashOpaqueToken } from "../lib/foundation-security.js";
 import { repository } from "../lib/repository.js";
+import { ChainService } from "./chain.service.js";
 import { ActorService } from "./actor.service.js";
 import { ContractRegistryService } from "./contract-registry.service.js";
+import { FundingTokenService, formatDisplayAmountFromBaseUnits } from "./funding-token.service.js";
 import { SessionService } from "./session.service.js";
 import { StateTransitionService } from "./state-transition.service.js";
 import { StorageService } from "./storage.service.js";
 import { TokenService } from "./token.service.js";
 import { WorkflowAiService } from "./workflow-ai.service.js";
 import { WorkspaceQueryService } from "./workspace-query.service.js";
+import { parseTokenAmountToBaseUnits } from "@padala-vision/shared";
 
 export class WorkflowApiService {
   constructor(
@@ -71,8 +77,10 @@ export class WorkflowApiService {
     private readonly transitions = new StateTransitionService(),
     private readonly workspaces = new WorkspaceQueryService(),
     private readonly contracts = new ContractRegistryService(),
+    private readonly chain = new ChainService(),
     private readonly storage = new StorageService(),
     private readonly ai = new WorkflowAiService(),
+    private readonly fundingTokens = new FundingTokenService(),
   ) {}
 
   async enterSession(input: EnterWorkspaceSessionRequest): Promise<EnterWorkspaceSessionResponse & { token: string }> {
@@ -117,9 +125,84 @@ export class WorkflowApiService {
     };
   }
 
+  async createSellerOrderIntent(actor: SessionActor, input: SellerCreateOrderIntentRequest) {
+    ensureRole(actor, "seller");
+    validateParticipantWallet(input.sellerWallet, "Seller wallet is not a valid Stellar address");
+    validateParticipantWallet(input.buyerWallet, "Buyer wallet is not a valid Stellar address");
+    normalizeTotal(input.itemAmount, input.deliveryFee, input.totalAmount);
+    const contractSet = await this.contracts.resolveActiveContractSet();
+    const token = await this.fundingTokens.inspectToken({
+      contractId: contractSet.tokenContractId,
+      rpcUrl: contractSet.rpcUrl,
+      networkPassphrase: contractSet.networkPassphrase,
+      sourceAddress: input.sellerWallet,
+    });
+
+    return {
+      actionType: "create_order" as const,
+      method: "create_order" as const,
+      contractId: contractSet.contractId,
+      tokenContractId: contractSet.tokenContractId,
+      rpcUrl: contractSet.rpcUrl,
+      networkPassphrase: contractSet.networkPassphrase,
+      tokenDecimals: token.decimals,
+      args: {
+        seller_wallet: input.sellerWallet,
+        buyer_wallet: input.buyerWallet,
+        item_amount: parseTokenAmountToBaseUnits(input.itemAmount, token.decimals).toString(),
+        delivery_fee: parseTokenAmountToBaseUnits(input.deliveryFee, token.decimals).toString(),
+        expires_at: toUnixSeconds(input.fundingDeadlineAt).toString(),
+      },
+    };
+  }
+
   async createSellerOrder(actor: SessionActor, input: SellerCreateOrderRequest): Promise<SellerCreateOrderResponse> {
     ensureRole(actor, "seller");
+    validateParticipantWallet(input.sellerWallet, "Seller wallet is not a valid Stellar address");
+    validateParticipantWallet(input.buyerWallet, "Buyer wallet is not a valid Stellar address");
+    if (input.submittedWallet !== input.sellerWallet) {
+      throw new HttpError(422, "Submitted wallet must match the seller wallet used to create the order", "workflow_create_wallet_mismatch");
+    }
+
     const totalAmount = normalizeTotal(input.itemAmount, input.deliveryFee, input.totalAmount);
+    const contractSet = await this.contracts.resolveActiveContractSet();
+    const verified = await this.chain.verifyCreateOrderTransaction({
+      txHash: input.txHash,
+      contractId: contractSet.contractId,
+      submittedWallet: input.submittedWallet,
+      sellerWallet: input.sellerWallet,
+      buyerWallet: input.buyerWallet,
+      rpcUrl: contractSet.rpcUrl,
+      networkPassphrase: contractSet.networkPassphrase,
+    });
+
+    if (verified.status !== "confirmed" || !verified.onChainOrderId) {
+      throw new HttpError(409, "Create-order transaction is not confirmed on chain", "workflow_create_not_confirmed");
+    }
+
+    const existingTransaction = await repository.getTransactionByHash(input.txHash);
+    if (existingTransaction) {
+      const existingOrder = await foundationRepository.getWorkflowOrder(existingTransaction.orderId);
+      if (existingOrder) {
+        const invite = await this.tokens.issueToken({
+          orderId: existingOrder.id,
+          actorId: existingOrder.buyerActorId,
+          type: "buyer_invite",
+          createdByActorId: actor.actorId,
+        });
+        const detail = await this.getOrderDetailEnvelope(existingOrder.id, actor);
+        return {
+          order: detail.order,
+          buyerInvite: {
+            type: "buyer_invite",
+            token: invite.token,
+            expiresAt: invite.record.expiresAt,
+            oneTimeUse: true,
+          },
+        };
+      }
+    }
+
     const pendingBuyer = await this.actors.createPendingBuyerActor({
       displayName: input.buyerDisplayName,
       contactLabel: input.buyerContactLabel ?? null,
@@ -132,6 +215,17 @@ export class WorkflowApiService {
       id: orderId,
       publicOrderCode: generatePublicOrderCode(orderId),
       workflowStatus: "awaiting_funding",
+      contractId: verified.contractId,
+      onChainOrderId: verified.onChainOrderId,
+      sellerWallet: input.sellerWallet,
+      buyerWallet: input.buyerWallet,
+      riderWallet: null,
+      orderCreatedTxHash: input.txHash,
+      fundingTxHash: null,
+      fundingStatus: "not_started",
+      lastChainReconciliationStatus: "order_created_confirmed",
+      lastChainReconciledAt: issuedAt,
+      lastChainError: null,
       sellerActorId: actor.actorId,
       buyerActorId: pendingBuyer.id,
       itemAmount: input.itemAmount,
@@ -157,12 +251,33 @@ export class WorkflowApiService {
 
     await foundationRepository.createOrderTimelineEvent({
       orderId,
+      type: "order_created_on_chain",
+      actorId: actor.actorId,
+      actorRole: actor.role,
+      note: `Soroban order ${verified.onChainOrderId} confirmed on chain`,
+      occurredAt: issuedAt,
+      metadata: {
+        contractId: verified.contractId,
+        onChainOrderId: verified.onChainOrderId,
+        txHash: input.txHash,
+      },
+    });
+
+    await foundationRepository.createOrderTimelineEvent({
+      orderId,
       type: "buyer_invite_issued",
       actorId: actor.actorId,
       actorRole: actor.role,
       note: "Buyer invite issued",
       occurredAt: issuedAt,
       metadata: {},
+    });
+
+    await repository.createTransaction({
+      orderId,
+      txHash: input.txHash,
+      txType: "workflow_create_order",
+      txStatus: "confirmed",
     });
 
     const invite = await this.tokens.issueToken({
@@ -338,23 +453,105 @@ export class WorkflowApiService {
     if (order.buyerActorId !== actor.actorId) {
       throw new HttpError(404, "Workflow order not found", "workflow_order_forbidden");
     }
-    if (order.workflowStatus !== "awaiting_funding") {
-      throw new HttpError(409, "Only awaiting-funding orders can create a funding intent", "workflow_funding_state_invalid");
+    if (order.workflowStatus !== "awaiting_funding" && order.workflowStatus !== "funding_failed") {
+      throw new HttpError(409, "Funding can only be prepared while awaiting funding or after a failed attempt", "workflow_funding_state_invalid");
+    }
+    if (!order.onChainOrderId) {
+      throw new HttpError(409, "Workflow order is missing the on-chain order reference", "workflow_chain_order_missing");
     }
 
     const contractSet = await this.contracts.resolveActiveContractSet();
+    const token = await this.fundingTokens.inspectToken({
+      contractId: contractSet.tokenContractId,
+      rpcUrl: contractSet.rpcUrl,
+      networkPassphrase: contractSet.networkPassphrase,
+      sourceAddress: order.buyerWallet,
+    });
+    const actionIntent = await repository.createChainActionIntent({
+      id: randomUUID(),
+      orderId,
+      actionType: "fund",
+      actorUserId: `workflow:${actor.actorId}`,
+      actorWallet: order.buyerWallet,
+      actorRoles: [actor.role],
+      contractId: order.contractId ?? contractSet.contractId,
+      environment: contractSet.environment,
+      method: "fund_order",
+      args: {
+        order_id: order.onChainOrderId,
+        total_amount: parseTokenAmountToBaseUnits(order.totalAmount, token.decimals).toString(),
+      },
+      replayKey: randomUUID(),
+      correlationId: `workflow-fund-intent:${orderId}:${Date.now()}`,
+    });
+
     return {
       orderId,
       actionType: "fund",
       method: "fund_order",
-      contractId: contractSet.contractId,
+      actionIntentId: actionIntent.id,
+      contractId: order.contractId ?? contractSet.contractId,
+      tokenContractId: contractSet.tokenContractId,
       rpcUrl: contractSet.rpcUrl,
       networkPassphrase: contractSet.networkPassphrase,
-      args: {
-        order_id: orderId,
-        total_amount: order.totalAmount,
+      tokenDecimals: token.decimals,
+      onChainOrderId: order.onChainOrderId,
+      buyerWallet: order.buyerWallet,
+      fundingStatus: order.fundingStatus,
+      existingFundingTxHash: order.fundingTxHash,
+      token,
+      setup: {
+        demoTopUpAvailable: Boolean(env.TOKEN_ADMIN_SECRET) && contractSet.networkPassphrase === Networks.TESTNET,
+        xlmFriendbotUrl:
+          contractSet.networkPassphrase === Networks.TESTNET
+            ? `https://friendbot.stellar.org/?addr=${order.buyerWallet}`
+            : null,
       },
-      replayKey: randomUUID(),
+      args: {
+        order_id: order.onChainOrderId,
+        total_amount: parseTokenAmountToBaseUnits(order.totalAmount, token.decimals).toString(),
+      },
+      replayKey: actionIntent.replayKey,
+    };
+  }
+
+  async requestBuyerFundingTopUp(actor: SessionActor, orderId: string): Promise<BuyerFundingTopUpResponse> {
+    ensureRole(actor, "buyer");
+    const order = await requireWorkflowOrder(orderId);
+    if (order.buyerActorId !== actor.actorId) {
+      throw new HttpError(404, "Workflow order not found", "workflow_order_forbidden");
+    }
+    if (order.workflowStatus !== "awaiting_funding" && order.workflowStatus !== "funding_failed") {
+      throw new HttpError(409, "Test token top-up is only available before funding succeeds", "workflow_top_up_state_invalid");
+    }
+    if (!env.TOKEN_ADMIN_SECRET) {
+      throw new HttpError(503, "Test token top-up is not configured on this backend", "workflow_token_top_up_unavailable");
+    }
+
+    const contractSet = await this.contracts.resolveActiveContractSet();
+    const token = await this.fundingTokens.inspectToken({
+      contractId: contractSet.tokenContractId,
+      rpcUrl: contractSet.rpcUrl,
+      networkPassphrase: contractSet.networkPassphrase,
+      sourceAddress: order.buyerWallet,
+    });
+    const amountNeededBaseUnits = parseTokenAmountToBaseUnits(order.totalAmount, token.decimals);
+    const minted = await this.fundingTokens.mintBuyerTopUp({
+      rpcUrl: contractSet.rpcUrl,
+      networkPassphrase: contractSet.networkPassphrase,
+      tokenContractId: contractSet.tokenContractId,
+      adminSecret: env.TOKEN_ADMIN_SECRET,
+      recipientWallet: order.buyerWallet,
+      amountNeededBaseUnits,
+    });
+
+    return {
+      orderId,
+      status: minted.status,
+      txHash: minted.txHash,
+      token,
+      mintedAmount: formatDisplayAmountFromBaseUnits(minted.mintedAmount, token.decimals),
+      balanceAfter: formatDisplayAmountFromBaseUnits(minted.balanceAfter, token.decimals),
     };
   }
 
@@ -364,25 +561,249 @@ export class WorkflowApiService {
     if (order.buyerActorId !== actor.actorId) {
       throw new HttpError(404, "Workflow order not found", "workflow_order_forbidden");
     }
+    if (!order.onChainOrderId) {
+      throw new HttpError(409, "Workflow order is missing the on-chain order reference", "workflow_chain_order_missing");
+    }
+    if (input.submittedWallet !== order.buyerWallet) {
+      throw new HttpError(422, "Submitted wallet did not match the buyer wallet on the order", "workflow_fund_wallet_mismatch");
+    }
+
+    const contractSet = await this.contracts.resolveActiveContractSet();
+    const existingRecord = await repository.getChainActionRecordByTxHash(input.txHash);
+    if (existingRecord) {
+      if (existingRecord.orderId !== orderId || existingRecord.actionType !== "fund") {
+        throw new HttpError(409, "Transaction hash is already associated with another workflow action", "workflow_fund_tx_conflict");
+      }
+      if (existingRecord.status === "confirmed" && order.workflowStatus === "funded" && order.fundingTxHash === input.txHash) {
+        return {
+          orderId,
+          status: "funded",
+          txHash: input.txHash,
+          chainStatus: "confirmed",
+        };
+      }
+      if (existingRecord.status === "failed" && order.workflowStatus === "funding_failed" && order.fundingTxHash === input.txHash) {
+        return {
+          orderId,
+          status: "funding_failed",
+          txHash: input.txHash,
+          chainStatus: "failed",
+        };
+      }
+
+      const verified = await this.chain.verifyOrderActionTransaction({
+        txHash: input.txHash,
+        orderId: order.onChainOrderId,
+        contractId: existingRecord.contractId,
+        method: "fund_order",
+        submittedWallet: input.submittedWallet,
+        rpcUrl: contractSet.rpcUrl,
+        networkPassphrase: contractSet.networkPassphrase,
+      });
+
+      return this.applyWorkflowFundingVerification({
+        actor,
+        order,
+        txHash: input.txHash,
+        verifiedStatus: verified.status,
+        contractId: existingRecord.contractId,
+        chainLedger: verified.ledger ?? null,
+        recordId: existingRecord.id,
+        transactionAlreadyExists: true,
+      });
+    }
+
+    if (!input.actionIntentId) {
+      throw new HttpError(422, "Funding action intent is required for a new funding transaction", "workflow_fund_intent_required");
+    }
+
+    const actionIntent = await repository.getChainActionIntentById(input.actionIntentId);
+    if (!actionIntent || actionIntent.orderId !== orderId || actionIntent.actionType !== "fund") {
+      throw new HttpError(404, "Funding intent was not found for this order", "workflow_fund_intent_not_found");
+    }
+
+    const verified = await this.chain.verifyOrderActionTransaction({
+      txHash: input.txHash,
+      orderId: order.onChainOrderId,
+      contractId: actionIntent.contractId,
+      method: "fund_order",
+      submittedWallet: input.submittedWallet,
+      rpcUrl: contractSet.rpcUrl,
+      networkPassphrase: contractSet.networkPassphrase,
+    });
 
     await repository.createTransaction({
       orderId,
       txHash: input.txHash,
       txType: "workflow_fund",
+      txStatus: verified.status,
+    });
+
+    const record = await repository.createChainActionRecord({
+      chainActionIntentId: actionIntent.id,
+      orderId,
+      actionType: "fund",
+      txHash: input.txHash,
+      submittedWallet: input.submittedWallet,
+      contractId: actionIntent.contractId,
+      status: verified.status,
+      correlationId: `workflow-fund-confirm:${orderId}:${Date.now()}`,
+      confirmedAt: verified.status === "confirmed" ? new Date().toISOString() : null,
+      chainLedger: verified.ledger ?? null,
+    });
+
+    return this.applyWorkflowFundingVerification({
+      actor,
+      order,
+      txHash: input.txHash,
+      verifiedStatus: verified.status,
+      contractId: actionIntent.contractId,
+      chainLedger: verified.ledger ?? null,
+      recordId: record.id,
+      transactionAlreadyExists: true,
+    });
+  }
+
+  private async applyWorkflowFundingVerification(input: {
+    actor: SessionActor;
+    order: WorkflowOrderRecord;
+    txHash: string;
+    verifiedStatus: "pending" | "confirmed" | "failed";
+    contractId: string;
+    chainLedger: number | null;
+    recordId: string;
+    transactionAlreadyExists: boolean;
+  }): Promise<BuyerConfirmFundingResponse> {
+    const now = new Date().toISOString();
+
+    if (input.verifiedStatus === "pending") {
+      const nextStatus = input.order.workflowStatus === "funding_pending" ? input.order.workflowStatus : "funding_pending";
+      await foundationRepository.updateWorkflowOrder(input.order.id, {
+        workflowStatus: nextStatus,
+        fundingStatus: "pending",
+        fundingTxHash: input.txHash,
+        contractId: input.contractId,
+        lastChainReconciliationStatus: "funding_pending",
+        lastChainReconciledAt: now,
+        lastChainError: null,
+        lastEventType: "funding_submitted",
+        lastEventAt: now,
+      });
+
+      if (input.order.workflowStatus !== "funding_pending") {
+        await foundationRepository.createOrderTimelineEvent({
+          orderId: input.order.id,
+          type: "funding_submitted",
+          actorId: input.actor.actorId,
+          actorRole: input.actor.role,
+          note: "Funding transaction submitted and awaiting confirmation",
+          occurredAt: now,
+          metadata: {
+            txHash: input.txHash,
+            contractId: input.contractId,
+          },
+        });
+      }
+
+      await repository.updateChainActionRecord(input.recordId, {
+        status: "pending",
+        confirmedAt: null,
+        chainLedger: input.chainLedger,
+        correlationId: `workflow-fund-pending:${input.order.id}:${Date.now()}`,
+      });
+      await repository.updateTransactionByHash(input.txHash, {
+        txStatus: "pending",
+      });
+
+      return {
+        orderId: input.order.id,
+        status: "funding_pending",
+        txHash: input.txHash,
+        chainStatus: "pending",
+      };
+    }
+
+    if (input.verifiedStatus === "failed") {
+      await foundationRepository.updateWorkflowOrder(input.order.id, {
+        workflowStatus: "funding_failed",
+        fundingStatus: "failed",
+        fundingTxHash: input.txHash,
+        contractId: input.contractId,
+        lastChainReconciliationStatus: "funding_failed",
+        lastChainReconciledAt: now,
+        lastChainError: "Funding transaction failed on chain",
+        lastEventType: "funding_failed",
+        lastEventAt: now,
+      });
+      await foundationRepository.createOrderTimelineEvent({
+        orderId: input.order.id,
+        type: "funding_failed",
+        actorId: input.actor.actorId,
+        actorRole: input.actor.role,
+        note: "Funding transaction failed on chain",
+        occurredAt: now,
+        metadata: {
+          txHash: input.txHash,
+          contractId: input.contractId,
+        },
+      });
+      await repository.updateChainActionRecord(input.recordId, {
+        status: "failed",
+        confirmedAt: null,
+        chainLedger: input.chainLedger,
+        correlationId: `workflow-fund-failed:${input.order.id}:${Date.now()}`,
+      });
+      await repository.updateTransactionByHash(input.txHash, {
+        txStatus: "failed",
+      });
+
+      return {
+        orderId: input.order.id,
+        status: "funding_failed",
+        txHash: input.txHash,
+        chainStatus: "failed",
+      };
+    }
+
+    await foundationRepository.updateWorkflowOrder(input.order.id, {
+      workflowStatus: "funded",
+      fundingStatus: "confirmed",
+      fundingTxHash: input.txHash,
+      contractId: input.contractId,
+      lastChainReconciliationStatus: "funding_confirmed",
+      lastChainReconciledAt: now,
+      lastChainError: null,
+      lastEventType: "funding_confirmed",
+      lastEventAt: now,
+    });
+    await foundationRepository.createOrderTimelineEvent({
+      orderId: input.order.id,
+      type: "funding_confirmed",
+      actorId: input.actor.actorId,
+      actorRole: input.actor.role,
+      note: "Funding transaction confirmed on chain",
+      occurredAt: now,
+      metadata: {
+        txHash: input.txHash,
+        contractId: input.contractId,
+        chainLedger: input.chainLedger,
+      },
+    });
+    await repository.updateChainActionRecord(input.recordId, {
+      status: "confirmed",
+      confirmedAt: now,
+      chainLedger: input.chainLedger,
+      correlationId: `workflow-fund-confirmed:${input.order.id}:${Date.now()}`,
+    });
+    await repository.updateTransactionByHash(input.txHash, {
       txStatus: "confirmed",
     });
 
-    await this.transitions.transitionOrder({
-      orderId,
-      action: "buyer_confirmed_funding",
-      actorRole: actor.role,
-      actorId: actor.actorId,
-      note: "Buyer confirmed escrow funding",
-    });
-
     return {
-      orderId,
+      orderId: input.order.id,
       status: "funded",
+      txHash: input.txHash,
+      chainStatus: "confirmed",
     };
   }
 
@@ -999,6 +1420,19 @@ export class WorkflowApiService {
         lastEventType: order.lastEventType,
         lastEventAt: order.lastEventAt,
         relation,
+        chain: {
+          contractId: order.contractId,
+          onChainOrderId: order.onChainOrderId,
+          sellerWallet: order.sellerWallet,
+          buyerWallet: order.buyerWallet,
+          riderWallet: order.riderWallet,
+          orderCreatedTxHash: order.orderCreatedTxHash,
+          fundingTxHash: order.fundingTxHash,
+          fundingStatus: order.fundingStatus,
+          lastChainReconciliationStatus: order.lastChainReconciliationStatus,
+          lastChainReconciledAt: order.lastChainReconciledAt,
+          lastChainError: order.lastChainError,
+        },
       } satisfies OrderDetailParticipantView,
       timeline: timelineEntries,
       availableActions: getTransitionsFrom(order.workflowStatus)
@@ -1261,6 +1695,20 @@ function normalizeTotal(itemAmount: string, deliveryFee: string, totalAmount: st
     throw new HttpError(422, "totalAmount must equal itemAmount + deliveryFee", "workflow_total_mismatch");
   }
   return nextTotal;
+}
+
+function validateParticipantWallet(wallet: string, message: string) {
+  if (!StrKey.isValidEd25519PublicKey(wallet.trim())) {
+    throw new HttpError(422, message, "workflow_wallet_invalid");
+  }
+}
+
+function toUnixSeconds(value: string) {
+  const millis = Date.parse(value);
+  if (Number.isNaN(millis)) {
+    throw new HttpError(422, "Funding deadline must be a valid datetime", "workflow_deadline_invalid");
+  }
+  return Math.floor(millis / 1000);
 }
 
 function getDefaultRoute(role: ActorRole) {

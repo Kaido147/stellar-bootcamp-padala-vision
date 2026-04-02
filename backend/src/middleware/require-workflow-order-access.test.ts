@@ -18,6 +18,8 @@ test("requireWorkflowOrderAccess allows participants and hides orders from non-p
     id: "access-order-1",
     publicOrderCode: "ORD-ACCESS",
     workflowStatus: "funded",
+    sellerWallet: "GSELLERACCESS000000000000000000000000000000000000000000",
+    buyerWallet: "GBUYERACCESS0000000000000000000000000000000000000000000",
     sellerActorId: "seller-owner",
     buyerActorId: "buyer-owner",
     riderActorId: null,

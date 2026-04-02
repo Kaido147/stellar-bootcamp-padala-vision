@@ -12,6 +12,7 @@ export interface MonetaryBreakdown {
 export interface OrderRecord extends MonetaryBreakdown {
   id: string;
   contractId: string | null;
+  onChainOrderId: string | null;
   sellerWallet: string;
   buyerWallet: string;
   riderWallet: string | null;
@@ -21,6 +22,12 @@ export interface OrderRecord extends MonetaryBreakdown {
   fundedAt: string | null;
   releasedAt: string | null;
   expiresAt: string;
+  orderCreatedTxHash: string | null;
+  fundingTxHash: string | null;
+  fundingStatus: "not_started" | "pending" | "confirmed" | "failed";
+  lastChainReconciliationStatus: string | null;
+  lastChainReconciledAt: string | null;
+  lastChainError: string | null;
 }
 
 export interface EvidenceInput {

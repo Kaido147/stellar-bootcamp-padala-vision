@@ -12,6 +12,7 @@ import {
   rejectConfirmationSchema,
   riderPickupSchema,
   riderSubmitProofSchema,
+  sellerCreateWorkflowOrderIntentSchema,
   sellerCreateWorkflowOrderSchema,
   sessionEnterSchema,
 } from "../validators/workflow.js";
@@ -84,6 +85,11 @@ export async function createSellerWorkflowOrder(req: Request, res: Response) {
   res.status(201).json(await workflowApiService.createSellerOrder(getActorSession(res), payload));
 }
 
+export async function createSellerWorkflowOrderIntent(req: Request, res: Response) {
+  const payload = sellerCreateWorkflowOrderIntentSchema.parse(req.body);
+  res.status(201).json(await workflowApiService.createSellerOrderIntent(getActorSession(res), payload));
+}
+
 export async function listSellerWorkflowOrders(_req: Request, res: Response) {
   res.json(await workflowApiService.listSellerOrders(getActorSession(res)));
 }
@@ -129,6 +135,10 @@ export async function createBuyerFundingIntent(req: Request, res: Response) {
 export async function confirmBuyerFunding(req: Request, res: Response) {
   const payload = buyerConfirmFundingSchema.parse(req.body);
   res.json(await workflowApiService.confirmBuyerFunding(getActorSession(res), getOrderIdParam(req), payload));
+}
+
+export async function requestBuyerFundingTopUp(req: Request, res: Response) {
+  res.status(201).json(await workflowApiService.requestBuyerFundingTopUp(getActorSession(res), getOrderIdParam(req)));
 }
 
 export async function reissueBuyerConfirmation(req: Request, res: Response) {

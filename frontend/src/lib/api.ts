@@ -6,6 +6,7 @@ import type {
   BuyerConfirmFundingRequest,
   BuyerConfirmFundingResponse,
   BuyerCreateFundingIntentResponse,
+  BuyerFundingTopUpResponse,
   BuyerListOrdersResponse,
   BuyerOrderDetailResponse,
   BuyerReissueConfirmationResponse,
@@ -33,6 +34,8 @@ import type {
   RiderSubmitProofRequest,
   RiderSubmitProofResponse,
   SellerCancelOrderResponse,
+  SellerCreateOrderIntentRequest,
+  SellerCreateOrderIntentResponse,
   SellerCreateOrderRequest,
   SellerCreateOrderResponse,
   SellerListOrdersResponse,
@@ -198,10 +201,16 @@ export const workflowApi = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+  createSellerWorkflowOrderIntent: (payload: SellerCreateOrderIntentRequest) =>
+    workflowRequest<SellerCreateOrderIntentResponse>("/seller/orders/create-intent", {
+      method: "POST",
+      headers: createIdempotencyHeaders("workflow-create-order-intent", stableStringify(payload)),
+      body: JSON.stringify(payload),
+    }, { invalidateSessionOnUnauthorized: true }),
   createSellerWorkflowOrder: (payload: SellerCreateOrderRequest) =>
     workflowRequest<SellerCreateOrderResponse>("/seller/orders", {
       method: "POST",
-      headers: createIdempotencyHeaders("workflow-create-order", stableStringify(payload)),
+      headers: createIdempotencyHeaders("workflow-create-order", payload.txHash),
       body: JSON.stringify(payload),
     }, { invalidateSessionOnUnauthorized: true }),
   listSellerWorkflowOrders: () => workflowRequest<SellerListOrdersResponse>("/seller/orders", undefined, { invalidateSessionOnUnauthorized: true }),
@@ -227,6 +236,11 @@ export const workflowApi = {
       method: "POST",
       headers: createIdempotencyHeaders("workflow-fund-confirm", orderId, payload.txHash),
       body: JSON.stringify(payload),
+    }, { invalidateSessionOnUnauthorized: true }),
+  requestBuyerFundingTopUp: (orderId: string) =>
+    workflowRequest<BuyerFundingTopUpResponse>(`/buyer/orders/${orderId}/fund/top-up`, {
+      method: "POST",
+      headers: createIdempotencyHeaders("workflow-fund-top-up", orderId),
     }, { invalidateSessionOnUnauthorized: true }),
   reissueBuyerConfirmation: (orderId: string) =>
     workflowRequest<BuyerReissueConfirmationResponse>(`/buyer/orders/${orderId}/confirmation/reissue`, {

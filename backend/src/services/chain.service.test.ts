@@ -121,6 +121,45 @@ test("verifyOrderActionTransaction confirms assign_rider with matching rider wal
   assert.equal(verified.riderWallet, riderWallet);
 });
 
+test("verifyCreateOrderTransaction confirms create_order and extracts the on-chain order id from the return value", async () => {
+  const contractId = "CBSGWQCBZ52XAN62HHPMYAVLF6DZBFPI4GDKI5ULKDXDUYQROKR7UXAB";
+  const sellerWallet = Keypair.random().publicKey();
+  const buyerWallet = Keypair.random().publicKey();
+  const envelopeXdr = buildCreateOrderTransactionXdr({
+    wallet: sellerWallet,
+    contractId,
+    sellerWallet,
+    buyerWallet,
+  });
+
+  const service = new ChainService({
+    fetchTransaction: async () => ({
+      status: "SUCCESS",
+      envelopeXdr,
+      latestLedger: 444,
+      returnValue: nativeToScVal(99n, { type: "u64" }),
+    }),
+  });
+
+  const verified = await service.verifyCreateOrderTransaction({
+    txHash: "tx-create-1",
+    contractId,
+    submittedWallet: sellerWallet,
+    sellerWallet,
+    buyerWallet,
+    rpcUrl: "https://rpc.example",
+    networkPassphrase: Networks.TESTNET,
+  });
+
+  assert.equal(verified.status, "confirmed");
+  assert.equal(verified.contractId, contractId);
+  assert.equal(verified.submittedWallet, sellerWallet);
+  assert.equal(verified.sellerWallet, sellerWallet);
+  assert.equal(verified.buyerWallet, buyerWallet);
+  assert.equal(verified.onChainOrderId, "99");
+  assert.equal(verified.ledger, 444);
+});
+
 function buildReleaseTransactionXdr(input: {
   wallet: string;
   contractId: string;
@@ -171,6 +210,35 @@ function buildOrderActionTransactionXdr(input: {
         contract: input.contractId,
         function: input.functionName,
         args: [nativeToScVal(BigInt(input.orderId), { type: "u64" }), ...(input.extraArgs ?? [])],
+      }),
+    )
+    .setTimeout(TimeoutInfinite)
+    .build()
+    .toXDR();
+}
+
+function buildCreateOrderTransactionXdr(input: {
+  wallet: string;
+  contractId: string;
+  sellerWallet: string;
+  buyerWallet: string;
+}) {
+  const account = new Account(input.wallet, "1");
+  return new TransactionBuilder(account, {
+    fee: String(BASE_FEE),
+    networkPassphrase: Networks.TESTNET,
+  })
+    .addOperation(
+      Operation.invokeContractFunction({
+        contract: input.contractId,
+        function: "create_order",
+        args: [
+          nativeToScVal(input.sellerWallet, { type: "address" }),
+          nativeToScVal(input.buyerWallet, { type: "address" }),
+          nativeToScVal(100_0000000n, { type: "i128" }),
+          nativeToScVal(25_0000000n, { type: "i128" }),
+          nativeToScVal(1_777_777_777n, { type: "u64" }),
+        ],
       }),
     )
     .setTimeout(TimeoutInfinite)

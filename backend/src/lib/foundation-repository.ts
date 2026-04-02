@@ -42,6 +42,17 @@ export interface WorkflowOrderRecord {
   id: string;
   publicOrderCode: string;
   workflowStatus: DurableOrderStatus;
+  contractId: string | null;
+  onChainOrderId: string | null;
+  sellerWallet: string;
+  buyerWallet: string;
+  riderWallet: string | null;
+  orderCreatedTxHash: string | null;
+  fundingTxHash: string | null;
+  fundingStatus: "not_started" | "pending" | "confirmed" | "failed";
+  lastChainReconciliationStatus: string | null;
+  lastChainReconciledAt: string | null;
+  lastChainError: string | null;
   sellerActorId: string;
   buyerActorId: string;
   riderActorId: string | null;
@@ -128,6 +139,17 @@ interface CreateWorkflowOrderInput {
   id: string;
   publicOrderCode: string;
   workflowStatus: DurableOrderStatus;
+  contractId?: string | null;
+  onChainOrderId?: string | null;
+  sellerWallet: string;
+  buyerWallet: string;
+  riderWallet?: string | null;
+  orderCreatedTxHash?: string | null;
+  fundingTxHash?: string | null;
+  fundingStatus?: "not_started" | "pending" | "confirmed" | "failed";
+  lastChainReconciliationStatus?: string | null;
+  lastChainReconciledAt?: string | null;
+  lastChainError?: string | null;
   sellerActorId: string;
   buyerActorId: string;
   riderActorId?: string | null;
@@ -150,6 +172,17 @@ interface CreateWorkflowOrderInput {
 
 interface UpdateWorkflowOrderPatch {
   workflowStatus?: DurableOrderStatus;
+  contractId?: string | null;
+  onChainOrderId?: string | null;
+  sellerWallet?: string;
+  buyerWallet?: string;
+  riderWallet?: string | null;
+  orderCreatedTxHash?: string | null;
+  fundingTxHash?: string | null;
+  fundingStatus?: "not_started" | "pending" | "confirmed" | "failed";
+  lastChainReconciliationStatus?: string | null;
+  lastChainReconciledAt?: string | null;
+  lastChainError?: string | null;
   riderActorId?: string | null;
   buyerConfirmationDueAt?: string | null;
   riderAcceptDueAt?: string | null;
@@ -419,6 +452,17 @@ export class InMemoryFoundationRepository implements FoundationRepository {
       id: input.id,
       publicOrderCode: input.publicOrderCode,
       workflowStatus: input.workflowStatus,
+      contractId: input.contractId ?? null,
+      onChainOrderId: input.onChainOrderId ?? null,
+      sellerWallet: input.sellerWallet,
+      buyerWallet: input.buyerWallet,
+      riderWallet: input.riderWallet ?? null,
+      orderCreatedTxHash: input.orderCreatedTxHash ?? null,
+      fundingTxHash: input.fundingTxHash ?? null,
+      fundingStatus: input.fundingStatus ?? "not_started",
+      lastChainReconciliationStatus: input.lastChainReconciliationStatus ?? null,
+      lastChainReconciledAt: input.lastChainReconciledAt ?? null,
+      lastChainError: input.lastChainError ?? null,
       sellerActorId: input.sellerActorId,
       buyerActorId: input.buyerActorId,
       riderActorId: input.riderActorId ?? null,
@@ -456,6 +500,17 @@ export class InMemoryFoundationRepository implements FoundationRepository {
 
     const updated: WorkflowOrderRecord = {
       ...existing,
+      contractId: patch.contractId ?? existing.contractId,
+      onChainOrderId: patch.onChainOrderId ?? existing.onChainOrderId,
+      sellerWallet: patch.sellerWallet ?? existing.sellerWallet,
+      buyerWallet: patch.buyerWallet ?? existing.buyerWallet,
+      riderWallet: patch.riderWallet ?? existing.riderWallet,
+      orderCreatedTxHash: patch.orderCreatedTxHash ?? existing.orderCreatedTxHash,
+      fundingTxHash: patch.fundingTxHash ?? existing.fundingTxHash,
+      fundingStatus: patch.fundingStatus ?? existing.fundingStatus,
+      lastChainReconciliationStatus: patch.lastChainReconciliationStatus ?? existing.lastChainReconciliationStatus,
+      lastChainReconciledAt: patch.lastChainReconciledAt ?? existing.lastChainReconciledAt,
+      lastChainError: patch.lastChainError ?? existing.lastChainError,
       workflowStatus: patch.workflowStatus ?? existing.workflowStatus,
       riderActorId: patch.riderActorId ?? existing.riderActorId,
       buyerConfirmationDueAt: patch.buyerConfirmationDueAt ?? existing.buyerConfirmationDueAt,
@@ -589,6 +644,17 @@ type WorkflowOrderRow = {
   id: string;
   public_order_code: string | null;
   workflow_status: DurableOrderStatus | null;
+  contract_id: string | null;
+  on_chain_order_id: string | null;
+  seller_wallet: string;
+  buyer_wallet: string;
+  rider_wallet: string | null;
+  order_created_tx_hash: string | null;
+  funding_tx_hash: string | null;
+  funding_status: "not_started" | "pending" | "confirmed" | "failed";
+  last_chain_reconciliation_status: string | null;
+  last_chain_reconciled_at: string | null;
+  last_chain_error: string | null;
   seller_actor_id: string | null;
   buyer_actor_id: string | null;
   rider_actor_id: string | null;
@@ -901,10 +967,11 @@ export class SupabaseFoundationRepository implements FoundationRepository {
       .from("orders")
       .insert({
         id: input.id,
-        contract_id: null,
-        seller_wallet: shadow.sellerWallet,
-        buyer_wallet: shadow.buyerWallet,
-        rider_wallet: shadow.riderWallet,
+        contract_id: input.contractId ?? null,
+        on_chain_order_id: input.onChainOrderId ?? null,
+        seller_wallet: input.sellerWallet,
+        buyer_wallet: input.buyerWallet,
+        rider_wallet: input.riderWallet ?? null,
         item_amount: input.itemAmount,
         delivery_fee: input.deliveryFee,
         total_amount: input.totalAmount,
@@ -912,6 +979,12 @@ export class SupabaseFoundationRepository implements FoundationRepository {
         funded_at: shadow.fundedAt,
         released_at: shadow.releasedAt,
         expires_at: input.fundingDeadlineAt,
+        order_created_tx_hash: input.orderCreatedTxHash ?? null,
+        funding_tx_hash: input.fundingTxHash ?? null,
+        funding_status: input.fundingStatus ?? "not_started",
+        last_chain_reconciliation_status: input.lastChainReconciliationStatus ?? null,
+        last_chain_reconciled_at: input.lastChainReconciledAt ?? null,
+        last_chain_error: input.lastChainError ?? null,
         workflow_status: input.workflowStatus,
         seller_actor_id: input.sellerActorId,
         buyer_actor_id: input.buyerActorId,
@@ -968,6 +1041,10 @@ export class SupabaseFoundationRepository implements FoundationRepository {
     const { data, error } = await this.client
       .from("orders")
       .update({
+        contract_id: patch.contractId ?? current.contractId,
+        on_chain_order_id: patch.onChainOrderId ?? current.onChainOrderId,
+        seller_wallet: patch.sellerWallet ?? current.sellerWallet,
+        buyer_wallet: patch.buyerWallet ?? current.buyerWallet,
         rider_actor_id: patch.riderActorId ?? current.riderActorId,
         workflow_status: nextStatus,
         buyer_confirmation_due_at: patch.buyerConfirmationDueAt ?? current.buyerConfirmationDueAt,
@@ -981,7 +1058,13 @@ export class SupabaseFoundationRepository implements FoundationRepository {
         status: shadow.legacyStatus,
         funded_at: shadow.fundedAt,
         released_at: shadow.releasedAt,
-        rider_wallet: shadow.riderWallet,
+        rider_wallet: patch.riderWallet ?? current.riderWallet ?? shadow.riderWallet,
+        order_created_tx_hash: patch.orderCreatedTxHash ?? current.orderCreatedTxHash,
+        funding_tx_hash: patch.fundingTxHash ?? current.fundingTxHash,
+        funding_status: patch.fundingStatus ?? current.fundingStatus,
+        last_chain_reconciliation_status: patch.lastChainReconciliationStatus ?? current.lastChainReconciliationStatus,
+        last_chain_reconciled_at: patch.lastChainReconciledAt ?? current.lastChainReconciledAt,
+        last_chain_error: patch.lastChainError ?? current.lastChainError,
         updated_at: new Date().toISOString(),
       })
       .eq("id", id)
@@ -1136,7 +1219,18 @@ function mapOrderAccessTokenRow(row: OrderAccessTokenRow): StoredOrderAccessToke
 }
 
 function mapWorkflowOrderRow(row: WorkflowOrderRow): WorkflowOrderRecord {
-  if (!row.public_order_code || !row.workflow_status || !row.seller_actor_id || !row.buyer_actor_id || !row.item_description || !row.pickup_label || !row.dropoff_label || !row.funding_deadline_at || !row.last_event_type || !row.last_event_at) {
+  if (
+    !row.public_order_code ||
+    !row.workflow_status ||
+    !row.seller_actor_id ||
+    !row.buyer_actor_id ||
+    !row.item_description ||
+    !row.pickup_label ||
+    !row.dropoff_label ||
+    !row.funding_deadline_at ||
+    !row.last_event_type ||
+    !row.last_event_at
+  ) {
     throw new Error(`Order row ${row.id} is missing required workflow columns`);
   }
 
@@ -1144,6 +1238,17 @@ function mapWorkflowOrderRow(row: WorkflowOrderRow): WorkflowOrderRecord {
     id: row.id,
     publicOrderCode: row.public_order_code,
     workflowStatus: row.workflow_status,
+    contractId: row.contract_id,
+    onChainOrderId: row.on_chain_order_id,
+    sellerWallet: row.seller_wallet,
+    buyerWallet: row.buyer_wallet,
+    riderWallet: row.rider_wallet,
+    orderCreatedTxHash: row.order_created_tx_hash,
+    fundingTxHash: row.funding_tx_hash,
+    fundingStatus: row.funding_status,
+    lastChainReconciliationStatus: row.last_chain_reconciliation_status,
+    lastChainReconciledAt: row.last_chain_reconciled_at,
+    lastChainError: row.last_chain_error,
     sellerActorId: row.seller_actor_id,
     buyerActorId: row.buyer_actor_id,
     riderActorId: row.rider_actor_id,
@@ -1183,12 +1288,12 @@ function mapOrderTimelineEventRow(row: OrderTimelineEventRow): OrderTimelineEven
 function createShadowLegacyOrderFields(input: Pick<CreateWorkflowOrderInput | WorkflowOrderRecord, "workflowStatus" | "sellerActorId" | "buyerActorId" | "riderActorId">) {
   switch (input.workflowStatus) {
     case "awaiting_funding":
+    case "funding_pending":
+    case "funding_failed":
       return {
         legacyStatus: "Draft",
         fundedAt: null,
         releasedAt: null,
-        sellerWallet: `demo:seller:${input.sellerActorId}`,
-        buyerWallet: `demo:buyer:${input.buyerActorId}`,
         riderWallet: null,
       };
     case "funded":
@@ -1196,8 +1301,6 @@ function createShadowLegacyOrderFields(input: Pick<CreateWorkflowOrderInput | Wo
         legacyStatus: "Funded",
         fundedAt: new Date().toISOString(),
         releasedAt: null,
-        sellerWallet: `demo:seller:${input.sellerActorId}`,
-        buyerWallet: `demo:buyer:${input.buyerActorId}`,
         riderWallet: null,
       };
     case "rider_assigned":
@@ -1205,8 +1308,6 @@ function createShadowLegacyOrderFields(input: Pick<CreateWorkflowOrderInput | Wo
         legacyStatus: "RiderAssigned",
         fundedAt: new Date().toISOString(),
         releasedAt: null,
-        sellerWallet: `demo:seller:${input.sellerActorId}`,
-        buyerWallet: `demo:buyer:${input.buyerActorId}`,
         riderWallet: input.riderActorId ? `demo:rider:${input.riderActorId}` : null,
       };
     case "in_transit":
@@ -1214,8 +1315,6 @@ function createShadowLegacyOrderFields(input: Pick<CreateWorkflowOrderInput | Wo
         legacyStatus: "InTransit",
         fundedAt: new Date().toISOString(),
         releasedAt: null,
-        sellerWallet: `demo:seller:${input.sellerActorId}`,
-        buyerWallet: `demo:buyer:${input.buyerActorId}`,
         riderWallet: input.riderActorId ? `demo:rider:${input.riderActorId}` : null,
       };
     case "awaiting_buyer_confirmation":
@@ -1223,8 +1322,6 @@ function createShadowLegacyOrderFields(input: Pick<CreateWorkflowOrderInput | Wo
         legacyStatus: "EvidenceSubmitted",
         fundedAt: new Date().toISOString(),
         releasedAt: null,
-        sellerWallet: `demo:seller:${input.sellerActorId}`,
-        buyerWallet: `demo:buyer:${input.buyerActorId}`,
         riderWallet: input.riderActorId ? `demo:rider:${input.riderActorId}` : null,
       };
     case "manual_review":
@@ -1233,8 +1330,6 @@ function createShadowLegacyOrderFields(input: Pick<CreateWorkflowOrderInput | Wo
         legacyStatus: "Disputed",
         fundedAt: new Date().toISOString(),
         releasedAt: null,
-        sellerWallet: `demo:seller:${input.sellerActorId}`,
-        buyerWallet: `demo:buyer:${input.buyerActorId}`,
         riderWallet: input.riderActorId ? `demo:rider:${input.riderActorId}` : null,
       };
     case "release_pending":
@@ -1242,8 +1337,6 @@ function createShadowLegacyOrderFields(input: Pick<CreateWorkflowOrderInput | Wo
         legacyStatus: "Approved",
         fundedAt: new Date().toISOString(),
         releasedAt: null,
-        sellerWallet: `demo:seller:${input.sellerActorId}`,
-        buyerWallet: `demo:buyer:${input.buyerActorId}`,
         riderWallet: input.riderActorId ? `demo:rider:${input.riderActorId}` : null,
       };
     case "released":
@@ -1251,8 +1344,6 @@ function createShadowLegacyOrderFields(input: Pick<CreateWorkflowOrderInput | Wo
         legacyStatus: "Released",
         fundedAt: new Date().toISOString(),
         releasedAt: new Date().toISOString(),
-        sellerWallet: `demo:seller:${input.sellerActorId}`,
-        buyerWallet: `demo:buyer:${input.buyerActorId}`,
         riderWallet: input.riderActorId ? `demo:rider:${input.riderActorId}` : null,
       };
     case "refund_pending":
@@ -1260,8 +1351,6 @@ function createShadowLegacyOrderFields(input: Pick<CreateWorkflowOrderInput | Wo
         legacyStatus: "Disputed",
         fundedAt: new Date().toISOString(),
         releasedAt: null,
-        sellerWallet: `demo:seller:${input.sellerActorId}`,
-        buyerWallet: `demo:buyer:${input.buyerActorId}`,
         riderWallet: input.riderActorId ? `demo:rider:${input.riderActorId}` : null,
       };
     case "refunded":
@@ -1269,8 +1358,6 @@ function createShadowLegacyOrderFields(input: Pick<CreateWorkflowOrderInput | Wo
         legacyStatus: "Refunded",
         fundedAt: new Date().toISOString(),
         releasedAt: null,
-        sellerWallet: `demo:seller:${input.sellerActorId}`,
-        buyerWallet: `demo:buyer:${input.buyerActorId}`,
         riderWallet: input.riderActorId ? `demo:rider:${input.riderActorId}` : null,
       };
     case "cancelled":
@@ -1278,8 +1365,6 @@ function createShadowLegacyOrderFields(input: Pick<CreateWorkflowOrderInput | Wo
         legacyStatus: "Expired",
         fundedAt: null,
         releasedAt: null,
-        sellerWallet: `demo:seller:${input.sellerActorId}`,
-        buyerWallet: `demo:buyer:${input.buyerActorId}`,
         riderWallet: null,
       };
     case "expired":
@@ -1287,8 +1372,6 @@ function createShadowLegacyOrderFields(input: Pick<CreateWorkflowOrderInput | Wo
         legacyStatus: "Expired",
         fundedAt: null,
         releasedAt: null,
-        sellerWallet: `demo:seller:${input.sellerActorId}`,
-        buyerWallet: `demo:buyer:${input.buyerActorId}`,
         riderWallet: null,
       };
   }

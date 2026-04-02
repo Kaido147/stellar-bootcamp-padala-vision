@@ -27,6 +27,7 @@ const envSchema = z.object({
   STELLAR_NETWORK_PASSPHRASE: z.string().optional(),
   USDC_CONTRACT_ID: z.string().optional(),
   PADALA_ESCROW_CONTRACT_ID: z.string().optional(),
+  TOKEN_ADMIN_SECRET: z.string().optional(),
   ORACLE_CONFIDENCE_THRESHOLD: z.coerce.number().default(0.8),
   WALLET_CHALLENGE_TTL_SECONDS: z.coerce.number().int().positive().default(300),
   ATTESTATION_TTL_SECONDS: z.coerce.number().int().positive().default(900),

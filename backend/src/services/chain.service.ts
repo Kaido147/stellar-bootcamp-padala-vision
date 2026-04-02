@@ -1,4 +1,4 @@
-import { StrKey, TransactionBuilder, rpc, scValToNative } from "@stellar/stellar-sdk";
+import { StrKey, TransactionBuilder, rpc, scValToNative, type xdr } from "@stellar/stellar-sdk";
 import { HttpError } from "../lib/errors.js";
 
 export interface VerifiedReleaseTransaction {
@@ -21,6 +21,17 @@ export interface VerifiedOrderActionTransaction {
   ledger?: number | null;
 }
 
+export interface VerifiedCreateOrderTransaction {
+  txHash: string;
+  status: "pending" | "confirmed" | "failed";
+  contractId: string;
+  submittedWallet: string;
+  sellerWallet: string;
+  buyerWallet: string;
+  onChainOrderId: string | null;
+  ledger?: number | null;
+}
+
 export interface ChainOrderStateSnapshot {
   orderId: string;
   contractId: string;
@@ -33,6 +44,15 @@ export interface ChainOrderStateSnapshot {
 }
 
 interface ChainServiceOptions {
+  verifyCreateOrderTransaction?: (input: {
+    txHash: string;
+    contractId: string;
+    submittedWallet: string;
+    sellerWallet: string;
+    buyerWallet: string;
+    rpcUrl?: string;
+    networkPassphrase?: string;
+  }) => Promise<VerifiedCreateOrderTransaction>;
   verifyReleaseTransaction?: (input: {
     txHash: string;
     orderId: string;
@@ -70,12 +90,15 @@ interface ChainServiceOptions {
 }
 
 export class ChainService {
+  private readonly verifyCreateOrderTransactionImpl: NonNullable<ChainServiceOptions["verifyCreateOrderTransaction"]>;
   private readonly verifyReleaseTransactionImpl: NonNullable<ChainServiceOptions["verifyReleaseTransaction"]>;
   private readonly verifyOrderActionTransactionImpl: NonNullable<ChainServiceOptions["verifyOrderActionTransaction"]>;
   private readonly getOrderStateImpl: NonNullable<ChainServiceOptions["getOrderState"]>;
   private readonly fetchTransactionImpl?: NonNullable<ChainServiceOptions["fetchTransaction"]>;
 
   constructor(options: ChainServiceOptions = {}) {
+    this.verifyCreateOrderTransactionImpl =
+      options.verifyCreateOrderTransaction ?? defaultVerifyCreateOrderTransaction;
     this.verifyReleaseTransactionImpl = options.verifyReleaseTransaction ?? defaultVerifyReleaseTransaction;
     this.verifyOrderActionTransactionImpl =
       options.verifyOrderActionTransaction ?? defaultVerifyOrderActionTransaction;
@@ -97,6 +120,22 @@ export class ChainService {
     }
 
     return this.verifyReleaseTransactionImpl(input);
+  }
+
+  async verifyCreateOrderTransaction(input: {
+    txHash: string;
+    contractId: string;
+    submittedWallet: string;
+    sellerWallet: string;
+    buyerWallet: string;
+    rpcUrl?: string;
+    networkPassphrase?: string;
+  }): Promise<VerifiedCreateOrderTransaction> {
+    if (this.verifyCreateOrderTransactionImpl === defaultVerifyCreateOrderTransaction) {
+      return defaultVerifyCreateOrderTransaction(input, this.fetchTransactionImpl);
+    }
+
+    return this.verifyCreateOrderTransactionImpl(input);
   }
 
   async verifyOrderActionTransaction(input: {
@@ -243,6 +282,70 @@ async function defaultVerifyReleaseTransaction(
   };
 }
 
+async function defaultVerifyCreateOrderTransaction(
+  input: {
+    txHash: string;
+    contractId: string;
+    submittedWallet: string;
+    sellerWallet: string;
+    buyerWallet: string;
+    rpcUrl?: string;
+    networkPassphrase?: string;
+  },
+  fetchTransactionImpl?: NonNullable<ChainServiceOptions["fetchTransaction"]>,
+): Promise<VerifiedCreateOrderTransaction> {
+  const verified = await verifyContractInvocation({
+    txHash: input.txHash,
+    orderId: "0",
+    contractId: input.contractId,
+    submittedWallet: input.submittedWallet,
+    method: "create_order",
+    expectedArgErrorCode: "create_order_tx_mismatch",
+    mismatchMessage: "Create order transaction did not match the submitted order payload",
+    rpcUrl: input.rpcUrl,
+    networkPassphrase: input.networkPassphrase,
+    fetchTransactionImpl,
+    skipOrderIdCheck: true,
+  });
+
+  if (verified.status !== "confirmed") {
+    return {
+      txHash: verified.txHash,
+      status: verified.status,
+      contractId: verified.contractId,
+      submittedWallet: verified.submittedWallet,
+      sellerWallet: input.sellerWallet,
+      buyerWallet: input.buyerWallet,
+      onChainOrderId: null,
+      ledger: verified.ledger ?? null,
+    };
+  }
+
+  const sellerWallet = normalizeArgToString(verified.args[0]);
+  const buyerWallet = normalizeArgToString(verified.args[1]);
+  if (sellerWallet !== input.sellerWallet || buyerWallet !== input.buyerWallet) {
+    throw new HttpError(422, "Create order transaction args did not match the submitted wallets", "create_order_tx_mismatch");
+  }
+
+  const returnValue = verified.returnValue;
+  if (!returnValue) {
+    throw new HttpError(422, "Create order transaction return value was unavailable", "create_order_tx_mismatch");
+  }
+
+  const onChainOrderId = normalizeArgToString(returnValue);
+
+  return {
+    txHash: verified.txHash,
+    status: "confirmed",
+    contractId: verified.contractId,
+    submittedWallet: verified.submittedWallet,
+    sellerWallet,
+    buyerWallet,
+    onChainOrderId,
+    ledger: verified.ledger ?? null,
+  };
+}
+
 async function defaultVerifyOrderActionTransaction(
   input: {
     txHash: string;
@@ -313,6 +416,7 @@ async function verifyContractInvocation(input: {
   rpcUrl?: string;
   networkPassphrase?: string;
   fetchTransactionImpl?: NonNullable<ChainServiceOptions["fetchTransaction"]>;
+  skipOrderIdCheck?: boolean;
 }) {
   if (!input.rpcUrl || !input.networkPassphrase) {
     throw new HttpError(
@@ -341,6 +445,7 @@ async function verifyContractInvocation(input: {
       submittedWallet: input.submittedWallet,
       ledger: transaction.latestLedger ?? null,
       args: [] as unknown[],
+      returnValue: undefined as unknown,
     };
   }
 
@@ -353,6 +458,7 @@ async function verifyContractInvocation(input: {
       submittedWallet: input.submittedWallet,
       ledger: transaction.latestLedger ?? null,
       args: [] as unknown[],
+      returnValue: undefined as unknown,
     };
   }
 
@@ -400,9 +506,12 @@ async function verifyContractInvocation(input: {
   }
 
   const args = invokeContractArgs.args().map((arg) => scValToNative(arg));
-  const orderId = normalizeArgToString(args[0]);
+  const orderId =
+    input.skipOrderIdCheck || args.length === 0
+      ? input.orderId
+      : normalizeArgToString(args[0]);
 
-  if (orderId !== input.orderId) {
+  if (!input.skipOrderIdCheck && orderId !== input.orderId) {
     throw new HttpError(422, input.mismatchMessage, input.expectedArgErrorCode);
   }
 
@@ -414,6 +523,10 @@ async function verifyContractInvocation(input: {
     submittedWallet: submittedSource,
     ledger: transaction.latestLedger ?? null,
     args,
+    returnValue:
+      "returnValue" in transaction && transaction.returnValue
+        ? scValToNative(transaction.returnValue as xdr.ScVal)
+        : undefined,
   };
 }
 

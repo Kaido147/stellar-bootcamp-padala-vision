@@ -5,6 +5,7 @@ import {
   cancelSellerWorkflowOrder,
   claimBuyerInvite,
   confirmBuyerFunding,
+  createSellerWorkflowOrderIntent,
   createBuyerFundingIntent,
   createSellerWorkflowOrder,
   enterWorkflowSession,
@@ -27,6 +28,7 @@ import {
   rejectDeliveryConfirmation,
   reissueBuyerConfirmation,
   reissueSellerBuyerInvite,
+  requestBuyerFundingTopUp,
   resolveOperatorDispute,
   submitRiderProof,
   uploadRiderProof,
@@ -45,6 +47,7 @@ workflowRouter.post("/session/logout", workflowAsync(logoutWorkflowSession));
 workflowRouter.get("/session/me", workflowAsync(getWorkflowSession));
 
 workflowRouter.post("/seller/orders", actorSessionMiddleware, requireActorRole("seller"), workflowAsync(createSellerWorkflowOrder));
+workflowRouter.post("/seller/orders/create-intent", actorSessionMiddleware, requireActorRole("seller"), workflowAsync(createSellerWorkflowOrderIntent));
 workflowRouter.get("/seller/orders", actorSessionMiddleware, requireActorRole("seller"), workflowAsync(listSellerWorkflowOrders));
 workflowRouter.get(
   "/seller/orders/:orderId",
@@ -90,6 +93,13 @@ workflowRouter.post(
   requireActorRole("buyer"),
   requireWorkflowOrderAccess({ allowedRelations: ["buyer_owner"] }),
   workflowAsync(confirmBuyerFunding),
+);
+workflowRouter.post(
+  "/buyer/orders/:orderId/fund/top-up",
+  actorSessionMiddleware,
+  requireActorRole("buyer"),
+  requireWorkflowOrderAccess({ allowedRelations: ["buyer_owner"] }),
+  workflowAsync(requestBuyerFundingTopUp),
 );
 workflowRouter.post(
   "/buyer/orders/:orderId/confirmation/reissue",

@@ -81,6 +81,19 @@ export interface OrderDetailParticipantView extends MonetaryAmountSummary {
   lastEventType: OrderEventType;
   lastEventAt: string;
   relation: OrderActorRelation;
+  chain?: {
+    contractId: string | null;
+    onChainOrderId: string | null;
+    sellerWallet: string;
+    buyerWallet: string;
+    riderWallet: string | null;
+    orderCreatedTxHash: string | null;
+    fundingTxHash: string | null;
+    fundingStatus: "not_started" | "pending" | "confirmed" | "failed";
+    lastChainReconciliationStatus: string | null;
+    lastChainReconciledAt: string | null;
+    lastChainError: string | null;
+  } | null;
 }
 
 export interface OrderDetailEnvelope {
@@ -115,10 +128,40 @@ export interface GetWorkspaceSessionResponse {
 export interface SellerCreateOrderRequest extends MonetaryAmountSummary {
   buyerDisplayName: string;
   buyerContactLabel?: string | null;
+  buyerWallet: string;
+  sellerWallet: string;
   itemDescription: string;
   pickupLabel: string;
   dropoffLabel: string;
   fundingDeadlineAt: string;
+  txHash: string;
+  submittedWallet: string;
+}
+
+export interface SellerCreateOrderIntentRequest extends MonetaryAmountSummary {
+  buyerWallet: string;
+  sellerWallet: string;
+  itemDescription: string;
+  pickupLabel: string;
+  dropoffLabel: string;
+  fundingDeadlineAt: string;
+}
+
+export interface SellerCreateOrderIntentResponse {
+  actionType: "create_order";
+  method: "create_order";
+  contractId: string;
+  tokenContractId: string;
+  rpcUrl: string;
+  networkPassphrase: string;
+  tokenDecimals: number;
+  args: {
+    seller_wallet: string;
+    buyer_wallet: string;
+    item_amount: string;
+    delivery_fee: string;
+    expires_at: string;
+  };
 }
 
 export interface IssuedTokenReference {
@@ -181,25 +224,63 @@ export interface BuyerCreateFundingIntentRequest {
   orderId: string;
 }
 
+export interface FundingTokenMetadata {
+  contractId: string;
+  symbol: string;
+  name: string;
+  decimals: number;
+  adminAddress: string | null;
+  assetCode: string | null;
+  assetIssuer: string | null;
+  isStellarAssetContract: boolean;
+  trustlineRequired: boolean;
+}
+
+export interface BuyerFundingSetupSupport {
+  demoTopUpAvailable: boolean;
+  xlmFriendbotUrl: string | null;
+}
+
 export interface BuyerCreateFundingIntentResponse {
   orderId: string;
   actionType: "fund";
   method: string;
+  actionIntentId: string;
   contractId: string;
+  tokenContractId: string;
   rpcUrl: string;
   networkPassphrase: string;
+  tokenDecimals: number;
+  onChainOrderId: string;
+  buyerWallet: string;
+  fundingStatus: "not_started" | "pending" | "confirmed" | "failed";
+  existingFundingTxHash: string | null;
+  token: FundingTokenMetadata;
+  setup: BuyerFundingSetupSupport;
   args: Record<string, unknown>;
   replayKey: string;
 }
 
 export interface BuyerConfirmFundingRequest {
+  actionIntentId?: string;
   txHash: string;
   submittedWallet: string;
 }
 
 export interface BuyerConfirmFundingResponse {
   orderId: string;
-  status: Extract<DurableOrderStatus, "funded">;
+  status: Extract<DurableOrderStatus, "funding_pending" | "funded" | "funding_failed">;
+  txHash: string;
+  chainStatus: "pending" | "confirmed" | "failed";
+}
+
+export interface BuyerFundingTopUpResponse {
+  orderId: string;
+  status: "minted" | "already_ready";
+  txHash: string | null;
+  token: FundingTokenMetadata;
+  mintedAmount: string;
+  balanceAfter: string;
 }
 
 export interface BuyerReissueConfirmationResponse {

@@ -16,6 +16,8 @@ test("state transition service applies shared foundation transitions and emits t
     id: "workflow-order-1",
     publicOrderCode: "ORD-1001",
     workflowStatus: "awaiting_buyer_confirmation",
+    sellerWallet: "GSELLERSTATE000000000000000000000000000000000000000000",
+    buyerWallet: "GBUYERSTATE0000000000000000000000000000000000000000000",
     sellerActorId: "seller-1",
     buyerActorId: "buyer-1",
     riderActorId: "rider-1",

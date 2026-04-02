@@ -159,9 +159,9 @@ export function OrderDetailPage({ audience }: { audience: Audience }) {
 
       {audience === "buyer" ? (
         <>
-          {detail.order.status === "awaiting_funding" ? (
+          {["awaiting_funding", "funding_pending", "funding_failed"].includes(detail.order.status) ? (
             <Link className="btn-primary px-4 py-2" to={`/buyer/orders/${detail.order.orderId}/fund`}>
-              Fund escrow
+              {detail.order.status === "funding_pending" ? "Check funding" : "Fund escrow"}
             </Link>
           ) : null}
           {"confirmationTokenActive" in detail ? (

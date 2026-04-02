@@ -61,7 +61,7 @@ test("final states are locked against further transitions", () => {
 test("transition map exposes machine-readable transitions from each state", () => {
   const fromAwaitingFunding = getTransitionsFrom("awaiting_funding").map((transition) => transition.action);
   assert.deepEqual(fromAwaitingFunding, [
-    "buyer_confirmed_funding",
+    "buyer_submitted_funding",
     "seller_cancelled_order",
     "system_expired_unfunded_order",
   ]);

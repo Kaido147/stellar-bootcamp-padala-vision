@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { Keypair } from "@stellar/stellar-sdk";
 
 process.env.NODE_ENV = "test";
 process.env.SUPABASE_URL = "";
@@ -9,9 +10,38 @@ process.env.SUPABASE_SERVICE_ROLE_KEY = "";
 const { createApp } = await import("../app.js");
 const { env } = await import("../config/env.js");
 const { ActorService } = await import("../services/actor.service.js");
+const { ChainService } = await import("../services/chain.service.js");
 const { clearContractRegistry, seedContractRegistry } = await import("../services/contract-registry.service.js");
 
 test("workflow v1 routes wire the redesigned backend API surface", async (t) => {
+  const originalVerifyCreateOrderTransaction = ChainService.prototype.verifyCreateOrderTransaction;
+  const originalVerifyOrderActionTransaction = ChainService.prototype.verifyOrderActionTransaction;
+
+  ChainService.prototype.verifyCreateOrderTransaction = async function mockVerifyCreateOrderTransaction(input) {
+    return {
+      txHash: input.txHash,
+      status: "confirmed",
+      contractId: input.contractId,
+      submittedWallet: input.submittedWallet,
+      sellerWallet: input.sellerWallet,
+      buyerWallet: input.buyerWallet,
+      onChainOrderId: String(Math.floor(Date.now() / 1000)),
+      ledger: 123456,
+    };
+  };
+
+  ChainService.prototype.verifyOrderActionTransaction = async function mockVerifyOrderActionTransaction(input) {
+    return {
+      txHash: input.txHash,
+      status: "confirmed",
+      orderId: input.orderId,
+      contractId: input.contractId,
+      submittedWallet: input.submittedWallet,
+      riderWallet: input.riderWallet ?? null,
+      ledger: 123457,
+    };
+  };
+
   await clearContractRegistry();
   await seedContractRegistry({
     environment: env.APP_ENV,
@@ -51,6 +81,8 @@ test("workflow v1 routes wire the redesigned backend API surface", async (t) => 
   const baseUrl = getBaseUrl(server);
 
   t.after(async () => {
+    ChainService.prototype.verifyCreateOrderTransaction = originalVerifyCreateOrderTransaction;
+    ChainService.prototype.verifyOrderActionTransaction = originalVerifyOrderActionTransaction;
     await closeServer(server);
   });
 
@@ -91,11 +123,7 @@ test("workflow v1 routes wire the redesigned backend API surface", async (t) => 
 
   await t.test("seller and buyer routes support order creation, invite reissue, claim, repeat buyer entry, and cancellation", async () => {
     const sellerCookie = await enterWorkspace(baseUrl, seller.workspaceCode, "123456", "seller");
-    const created = await apiRequest(baseUrl, "/api/seller/orders", {
-      method: "POST",
-      cookie: sellerCookie,
-      json: createOrderPayload("buyer-a"),
-    });
+    const created = await createWorkflowOrder(baseUrl, sellerCookie, "buyer-a");
 
     assert.equal(created.status, 201);
     const orderId = created.data.order.orderId as string;
@@ -194,23 +222,9 @@ test("workflow v1 routes wire the redesigned backend API surface", async (t) => 
     const otherSellerCookie = await enterWorkspace(baseUrl, otherSeller.workspaceCode, "123456", "seller");
 
     const flow = await createClaimedOrder(baseUrl, sellerCookie, "buyer-b", "445566");
-    const { orderId, buyerCookie } = flow;
+    const { orderId, buyerCookie, buyerWallet } = flow;
 
-    const fundingIntent = await apiRequest(baseUrl, `/api/buyer/orders/${orderId}/fund/intent`, {
-      method: "POST",
-      cookie: buyerCookie,
-    });
-    assert.equal(fundingIntent.status, 201);
-    assert.equal(fundingIntent.data.actionType, "fund");
-
-    const funded = await apiRequest(baseUrl, `/api/buyer/orders/${orderId}/fund/confirm`, {
-      method: "POST",
-      cookie: buyerCookie,
-      json: {
-        txHash: `tx-${randomUUID()}`,
-        submittedWallet: "GTESTBUYERWALLET",
-      },
-    });
+    const funded = await fundWorkflowOrder(baseUrl, orderId, buyerCookie, buyerWallet);
     assert.equal(funded.status, 200);
     assert.equal(funded.data.status, "funded");
 
@@ -315,16 +329,10 @@ test("workflow v1 routes wire the redesigned backend API surface", async (t) => 
     const operatorCookie = await enterWorkspace(baseUrl, operator.workspaceCode, "123456", "operator");
 
     const flow = await createClaimedOrder(baseUrl, sellerCookie, "buyer-c", "223344");
-    const { orderId, buyerCookie } = flow;
+    const { orderId, buyerCookie, buyerWallet } = flow;
 
-    await apiRequest(baseUrl, `/api/buyer/orders/${orderId}/fund/confirm`, {
-      method: "POST",
-      cookie: buyerCookie,
-      json: {
-        txHash: `tx-${randomUUID()}`,
-        submittedWallet: "GTESTBUYERWALLET",
-      },
-    });
+    const funded = await fundWorkflowOrder(baseUrl, orderId, buyerCookie, buyerWallet);
+    assert.equal(funded.status, 200);
     await apiRequest(baseUrl, `/api/rider/jobs/${orderId}/accept`, {
       method: "POST",
       cookie: riderCookie,
@@ -378,16 +386,10 @@ test("workflow v1 routes wire the redesigned backend API surface", async (t) => 
     const operatorCookie = await enterWorkspace(baseUrl, operator.workspaceCode, "123456", "operator");
 
     const flow = await createClaimedOrder(baseUrl, sellerCookie, "buyer-d", "112233");
-    const { orderId, buyerCookie } = flow;
+    const { orderId, buyerCookie, buyerWallet } = flow;
 
-    await apiRequest(baseUrl, `/api/buyer/orders/${orderId}/fund/confirm`, {
-      method: "POST",
-      cookie: buyerCookie,
-      json: {
-        txHash: `tx-${randomUUID()}`,
-        submittedWallet: "GTESTBUYERWALLET",
-      },
-    });
+    const funded = await fundWorkflowOrder(baseUrl, orderId, buyerCookie, buyerWallet);
+    assert.equal(funded.status, 200);
     await apiRequest(baseUrl, `/api/rider/jobs/${orderId}/accept`, {
       method: "POST",
       cookie: riderCookie,
@@ -466,9 +468,13 @@ test("workflow v1 routes wire the redesigned backend API surface", async (t) => 
 });
 
 function createOrderPayload(label: string) {
+  const sellerWallet = Keypair.random().publicKey();
+  const buyerWallet = Keypair.random().publicKey();
   return {
     buyerDisplayName: `Buyer ${label} ${randomUUID().slice(0, 4)}`,
     buyerContactLabel: `${label}@example.test`,
+    sellerWallet,
+    buyerWallet,
     itemDescription: `Parcel ${label}`,
     pickupLabel: `Pickup ${label}`,
     dropoffLabel: `Dropoff ${label}`,
@@ -480,11 +486,7 @@ function createOrderPayload(label: string) {
 }
 
 async function createClaimedOrder(baseUrl: string, sellerCookie: string, label: string, buyerPin: string) {
-  const created = await apiRequest(baseUrl, "/api/seller/orders", {
-    method: "POST",
-    cookie: sellerCookie,
-    json: createOrderPayload(label),
-  });
+  const created = await createWorkflowOrder(baseUrl, sellerCookie, label);
   assert.equal(created.status, 201);
 
   const claimed = await apiRequest(baseUrl, "/api/buyer/invite/claim", {
@@ -501,7 +503,66 @@ async function createClaimedOrder(baseUrl: string, sellerCookie: string, label: 
     orderId: created.data.order.orderId as string,
     buyerCookie: requireCookie(claimed),
     buyerWorkspaceCode: claimed.data.workspaceCode as string,
+    buyerWallet: created.meta.buyerWallet as string,
   };
+}
+
+async function createWorkflowOrder(baseUrl: string, sellerCookie: string, label: string) {
+  const payload = createOrderPayload(label);
+  const intent = await apiRequest(baseUrl, "/api/seller/orders/create-intent", {
+    method: "POST",
+    cookie: sellerCookie,
+    json: {
+      sellerWallet: payload.sellerWallet,
+      buyerWallet: payload.buyerWallet,
+      itemDescription: payload.itemDescription,
+      pickupLabel: payload.pickupLabel,
+      dropoffLabel: payload.dropoffLabel,
+      itemAmount: payload.itemAmount,
+      deliveryFee: payload.deliveryFee,
+      totalAmount: payload.totalAmount,
+      fundingDeadlineAt: payload.fundingDeadlineAt,
+    },
+  });
+  assert.equal(intent.status, 201);
+  assert.equal(intent.data.actionType, "create_order");
+
+  const created = await apiRequest(baseUrl, "/api/seller/orders", {
+    method: "POST",
+    cookie: sellerCookie,
+    json: {
+      ...payload,
+      txHash: `create-tx-${randomUUID()}`,
+      submittedWallet: payload.sellerWallet,
+    },
+  });
+
+  return {
+    ...created,
+    meta: {
+      sellerWallet: payload.sellerWallet,
+      buyerWallet: payload.buyerWallet,
+    },
+  };
+}
+
+async function fundWorkflowOrder(baseUrl: string, orderId: string, buyerCookie: string, buyerWallet: string) {
+  const fundingIntent = await apiRequest(baseUrl, `/api/buyer/orders/${orderId}/fund/intent`, {
+    method: "POST",
+    cookie: buyerCookie,
+  });
+  assert.equal(fundingIntent.status, 201);
+  assert.equal(fundingIntent.data.actionType, "fund");
+
+  return apiRequest(baseUrl, `/api/buyer/orders/${orderId}/fund/confirm`, {
+    method: "POST",
+    cookie: buyerCookie,
+    json: {
+      actionIntentId: fundingIntent.data.actionIntentId,
+      txHash: `fund-tx-${randomUUID()}`,
+      submittedWallet: buyerWallet,
+    },
+  });
 }
 
 async function enterWorkspace(baseUrl: string, workspaceCode: string, pin: string, role: "seller" | "buyer" | "rider" | "operator") {
