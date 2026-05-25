@@ -232,6 +232,7 @@ export interface FundingTokenMetadata {
   adminAddress: string | null;
   assetCode: string | null;
   assetIssuer: string | null;
+  fundingAssetType: "native" | "stellar_asset" | "custom_token";
   isStellarAssetContract: boolean;
   trustlineRequired: boolean;
 }
@@ -239,6 +240,7 @@ export interface FundingTokenMetadata {
 export interface BuyerFundingSetupSupport {
   demoTopUpAvailable: boolean;
   xlmFriendbotUrl: string | null;
+  topUpUnavailableReason?: "native_xlm_uses_friendbot" | "not_configured" | null;
 }
 
 export interface BuyerCreateFundingIntentResponse {

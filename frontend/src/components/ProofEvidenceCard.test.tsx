@@ -58,4 +58,26 @@ describe("ProofEvidenceCard", () => {
     expect(screen.getByText(/Gemini proof analysis is currently unavailable/i)).toBeInTheDocument();
     expect(screen.getByText(/The proof image could not be rendered here/i)).toBeInTheDocument();
   });
+
+  it("renders preview mode without an unavailable Gemini warning", () => {
+    render(
+      <ProofEvidenceCard
+        mode="preview"
+        proof={{
+          imageUrl: "blob:proof-preview",
+          storagePath: "proofs/order-1.jpg",
+          fileHash: "hash-123",
+          contentType: "image/jpeg",
+          submittedAt: "2026-03-31T00:00:00.000Z",
+          note: "Front desk handoff",
+          analysis: null,
+        }}
+        summary="Preview the uploaded image here before you submit it into the workflow."
+      />,
+    );
+
+    expect(screen.getByText(/AI Analysis Pending/i)).toBeInTheDocument();
+    expect(screen.getByText(/Submit this proof to attach it to the order and run AI analysis/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Gemini proof analysis is currently unavailable/i)).not.toBeInTheDocument();
+  });
 });

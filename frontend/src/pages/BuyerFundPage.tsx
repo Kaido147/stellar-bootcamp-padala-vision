@@ -164,9 +164,11 @@ export function BuyerFundPage() {
 
   const token = intent?.token ?? null;
   const tokenSymbol = token?.symbol ?? token?.assetCode ?? "token";
+  const fundingAssetIsNative = token?.fundingAssetType === "native";
   const existingFundingTxHash = detail?.order.chain?.fundingTxHash ?? intent?.existingFundingTxHash ?? null;
   const canAttemptTrustline =
     Boolean(intent) &&
+    !fundingAssetIsNative &&
     Boolean(wallet.address) &&
     wallet.networkPassphrase === intent?.networkPassphrase &&
     wallet.address === intent?.buyerWallet &&
@@ -176,6 +178,7 @@ export function BuyerFundPage() {
     readiness?.trustlinePresent === false;
   const canRequestTopUp =
     Boolean(intent?.setup.demoTopUpAvailable) &&
+    !fundingAssetIsNative &&
     Boolean(wallet.address) &&
     wallet.networkPassphrase === intent?.networkPassphrase &&
     wallet.address === intent?.buyerWallet &&
@@ -234,6 +237,12 @@ export function BuyerFundPage() {
           )}
 
           <div className="mt-4 flex flex-wrap gap-3">
+            {fundingAssetIsNative ? (
+              <div className="surface-card p-4 text-sm text-ink/70">
+                Native XLM is funded through Friendbot on Stellar testnet. No trustline or token minter is required.
+              </div>
+            ) : null}
+
             {canAttemptTrustline ? (
               <button
                 className="btn-secondary px-4 py-2"
@@ -503,15 +512,35 @@ async function inspectFundingReadiness(input: {
   }
 
   const nativeBalance = Number(account.balances.find((balance) => balance.asset_type === "native")?.balance ?? "0");
-  const xlmBalanceEnough = nativeBalance >= RECOMMENDED_XLM_BALANCE;
+  const nativeRequiredBalance =
+    token.fundingAssetType === "native"
+      ? Number(input.totalAmount) + RECOMMENDED_XLM_BALANCE
+      : RECOMMENDED_XLM_BALANCE;
+  const xlmBalanceEnough = nativeBalance >= nativeRequiredBalance;
   checks.push({
     id: "xlm_balance",
-    label: "XLM reserve and fees",
+    label: token.fundingAssetType === "native" ? "XLM funding balance" : "XLM reserve and fees",
     state: xlmBalanceEnough ? "ready" : "action_required",
     detail: xlmBalanceEnough
-      ? `${nativeBalance.toFixed(2)} XLM is available for reserve and fees.`
-      : `This wallet only has ${nativeBalance.toFixed(2)} XLM. Keep at least ${RECOMMENDED_XLM_BALANCE.toFixed(1)} XLM for trustline reserve and transaction fees.`,
+      ? token.fundingAssetType === "native"
+        ? `${nativeBalance.toFixed(2)} XLM is available for this ${input.totalAmount} XLM order and fees.`
+        : `${nativeBalance.toFixed(2)} XLM is available for reserve and fees.`
+      : token.fundingAssetType === "native"
+        ? `This wallet only has ${nativeBalance.toFixed(2)} XLM. Fund at least ${nativeRequiredBalance.toFixed(2)} XLM for the order plus reserve and fees.`
+        : `This wallet only has ${nativeBalance.toFixed(2)} XLM. Keep at least ${RECOMMENDED_XLM_BALANCE.toFixed(1)} XLM for trustline reserve and transaction fees.`,
   });
+
+  if (token.fundingAssetType === "native") {
+    return {
+      loading: false,
+      readyToFund: checks.every((check) => check.state === "ready"),
+      checks,
+      trustlinePresent: true,
+      issuerAvailable: true,
+      tokenBalanceEnough: xlmBalanceEnough,
+      xlmBalanceEnough,
+    };
+  }
 
   const assetIssuer = token.assetIssuer;
   const assetCode = token.assetCode ?? token.symbol;
@@ -606,6 +635,9 @@ function mapSetupError(error: unknown, token: FundingTokenMetadata | null, total
   }
   if (message.includes("workflow_token_trustline_required")) {
     return `Add the ${tokenCode} trustline before requesting test tokens.`;
+  }
+  if (message.includes("workflow_native_xlm_uses_friendbot")) {
+    return "Native XLM is funded through Friendbot on Stellar testnet. Open Friendbot, then refresh this page.";
   }
   if (message.includes("Timed out")) {
     return "The transaction was submitted, but confirmation is still pending. Refresh the funding page in a moment.";

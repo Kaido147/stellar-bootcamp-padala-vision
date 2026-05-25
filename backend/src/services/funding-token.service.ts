@@ -1,4 +1,5 @@
 import {
+  Asset,
   BASE_FEE,
   Keypair,
   Operation,
@@ -46,6 +47,21 @@ export class FundingTokenService {
     contractId: string;
     sourceAddress?: string | null;
   }): Promise<FundingTokenMetadata> {
+    if (isNativeTokenContract(input.contractId, input.networkPassphrase)) {
+      return {
+        contractId: input.contractId,
+        symbol: "XLM",
+        name: "native",
+        decimals: 7,
+        adminAddress: null,
+        assetCode: "XLM",
+        assetIssuer: null,
+        fundingAssetType: "native",
+        isStellarAssetContract: true,
+        trustlineRequired: false,
+      };
+    }
+
     const sourceAddress = input.sourceAddress ?? VIEW_SOURCE;
     try {
       const [decimals, name, symbol, adminAddress] = await Promise.all([
@@ -89,6 +105,7 @@ export class FundingTokenService {
         adminAddress: typeof adminAddress === "string" ? adminAddress : null,
         assetCode: parsedAsset.assetCode,
         assetIssuer: parsedAsset.assetIssuer,
+        fundingAssetType: parsedAsset.assetIssuer !== null ? "stellar_asset" : "custom_token",
         isStellarAssetContract: parsedAsset.assetIssuer !== null,
         trustlineRequired: parsedAsset.assetIssuer !== null,
       };
@@ -101,6 +118,7 @@ export class FundingTokenService {
         adminAddress: null,
         assetCode: null,
         assetIssuer: null,
+        fundingAssetType: "custom_token",
         isStellarAssetContract: false,
         trustlineRequired: false,
       };
@@ -232,6 +250,14 @@ export class FundingTokenService {
 
     return scValToNative(simulation.result.retval) as T;
   }
+}
+
+export function getNativeTokenContractId(networkPassphrase: string) {
+  return Asset.native().contractId(networkPassphrase);
+}
+
+export function isNativeTokenContract(contractId: string, networkPassphrase: string) {
+  return contractId === getNativeTokenContractId(networkPassphrase);
 }
 
 function parseAssetDescriptor(name: string, adminAddress: string | null) {

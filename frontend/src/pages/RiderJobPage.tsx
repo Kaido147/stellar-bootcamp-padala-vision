@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import type { RiderJobDetailResponse, RiderCreateProofUploadResponse } from "@padala-vision/shared";
+import type { OrderProofArtifact, RiderJobDetailResponse, RiderCreateProofUploadResponse } from "@padala-vision/shared";
 import { Breadcrumbs } from "../components/Breadcrumbs";
 import { Card } from "../components/Card";
 import { LoadState } from "../components/LoadState";
@@ -18,7 +18,9 @@ export function RiderJobPage() {
   const [uploadResult, setUploadResult] = useState<RiderCreateProofUploadResponse | null>(null);
   const [proofNote, setProofNote] = useState("");
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [submittedProof, setSubmittedProof] = useState<RiderJobDetailResponse["latestProof"] | null>(null);
+  const [submittedProof, setSubmittedProof] = useState<OrderProofArtifact | null>(null);
+  const [isUploadingProof, setIsUploadingProof] = useState(false);
+  const [isSubmittingProof, setIsSubmittingProof] = useState(false);
 
   useEffect(() => {
     if (!proofFile) {
@@ -49,7 +51,7 @@ export function RiderJobPage() {
       setLoading(true);
       setError(null);
       try {
-          const response = await workflowApi.getRiderJob(orderId);
+        const response = await workflowApi.getRiderJob(orderId);
         if (!cancelled) {
           setDetail(response);
         }
@@ -77,11 +79,19 @@ export function RiderJobPage() {
 
   async function refresh() {
     if (!id) {
-      return;
+      return null;
     }
 
     const response = await workflowApi.getRiderJob(id);
     setDetail(response);
+    return response;
+  }
+
+  function handleProofFileChange(file: File | null) {
+    setProofFile(file);
+    setUploadResult(null);
+    setSubmittedProof(null);
+    setMessage(null);
   }
 
   return (
@@ -120,6 +130,7 @@ export function RiderJobPage() {
         detail={detail}
         detailSubtitle="Keep the rider workflow operational: pickup, upload proof, and submit delivery evidence."
         detailTitle={`Rider Job ${detail.order.orderCode}`}
+        showProofEvidence={false}
       />
 
       <Card title="Proof Workflow" subtitle="Upload evidence, then submit the delivery proof into the new confirmation flow.">
@@ -127,7 +138,8 @@ export function RiderJobPage() {
           Proof image
           <input
             className="mt-2 block w-full text-sm text-ink"
-            onChange={(event) => setProofFile(event.target.files?.[0] ?? null)}
+            accept="image/*"
+            onChange={(event) => handleProofFileChange(event.target.files?.[0] ?? null)}
             type="file"
           />
         </label>
@@ -145,13 +157,14 @@ export function RiderJobPage() {
         <div className="flex flex-wrap gap-3">
           <button
             className="btn-secondary px-4 py-2"
-            disabled={!proofFile}
+            disabled={!proofFile || isUploadingProof || isSubmittingProof}
             onClick={() => {
               if (!id || !proofFile) {
                 return;
               }
 
               setMessage(null);
+              setIsUploadingProof(true);
               void workflowApi
                 .uploadRiderProofFile(id, proofFile)
                 .then((response) => {
@@ -160,22 +173,26 @@ export function RiderJobPage() {
                 })
                 .catch((nextError) => {
                   setMessage(nextError instanceof Error ? nextError.message : "Could not upload proof.");
+                })
+                .finally(() => {
+                  setIsUploadingProof(false);
                 });
             }}
             type="button"
           >
-            Upload proof
+            {isUploadingProof ? "Uploading..." : "Upload proof"}
           </button>
           <button
             className="btn-primary px-4 py-2"
-            disabled={!uploadResult}
+            disabled={!uploadResult || isUploadingProof || isSubmittingProof || Boolean(submittedProof)}
             onClick={() => {
               if (!id || !uploadResult) {
                 return;
               }
 
-              setMessage(null);
-              void workflowApi
+                  setMessage("Submitting proof and running AI analysis...");
+                  setIsSubmittingProof(true);
+                  void workflowApi
                 .submitRiderProof(id, {
                   imageUrl: uploadResult.uploadUrl,
                   storagePath: uploadResult.storagePath,
@@ -185,29 +202,42 @@ export function RiderJobPage() {
                   submittedAt: new Date().toISOString(),
                 })
                 .then(async (response) => {
-                  setSubmittedProof(response.latestProof ?? null);
+                  const refreshed = await refresh();
+                  const nextProof = response.latestProof ?? refreshed?.latestProof ?? null;
+                  if (!nextProof) {
+                    throw new Error("Proof submitted, but the analyzed proof could not be loaded. Refresh this page.");
+                  }
+                  setSubmittedProof(nextProof);
+                  const analysisAvailable = nextProof.analysis?.analysisStatus === "available";
                   setMessage(
-                    response.manualReviewRequired
-                      ? "Proof submitted, the image was analyzed, and the order was routed to manual review."
-                      : "Proof submitted, Gemini analysis is attached below, and buyer confirmation has been issued.",
+                    analysisAvailable
+                      ? response.manualReviewRequired
+                        ? "Proof submitted, AI analysis is attached, and the order was routed to manual review."
+                        : "Proof submitted, AI analysis is attached, and buyer confirmation has been issued."
+                      : "Proof submitted, but AI analysis is unavailable. Review proof manually.",
                   );
-                  await refresh();
                 })
                 .catch((nextError) => {
                   setMessage(nextError instanceof Error ? nextError.message : "Could not submit proof.");
+                })
+                .finally(() => {
+                  setIsSubmittingProof(false);
                 });
             }}
             type="button"
           >
-            Submit proof
+            {isSubmittingProof ? "Submitting..." : "Submit proof"}
           </button>
           <Link className="btn-secondary px-4 py-2" to="/rider/jobs">
             Back to workspace
           </Link>
         </div>
 
-        {previewUrl ? (
+        {submittedProof ? (
+          <ProofEvidenceCard mode="submitted" proof={submittedProof} summary={submittedProof.analysis?.summary ?? null} />
+        ) : isSubmittingProof && previewUrl ? (
           <ProofEvidenceCard
+            mode="preview"
             proof={{
               imageUrl: previewUrl,
               storagePath: uploadResult?.storagePath ?? null,
@@ -215,13 +245,26 @@ export function RiderJobPage() {
               contentType: uploadResult?.contentType ?? proofFile?.type ?? null,
               submittedAt: new Date().toISOString(),
               note: proofNote.trim() || null,
-              analysis: submittedProof?.analysis ?? null,
+              analysis: null,
             }}
-            summary={submittedProof?.analysis?.summary ?? "Preview the uploaded image here before you submit it into the workflow."}
+            summary="Submitting proof and running AI analysis..."
+          />
+        ) : previewUrl ? (
+          <ProofEvidenceCard
+            mode="preview"
+            proof={{
+              imageUrl: previewUrl,
+              storagePath: uploadResult?.storagePath ?? null,
+              fileHash: uploadResult?.fileHash ?? null,
+              contentType: uploadResult?.contentType ?? proofFile?.type ?? null,
+              submittedAt: new Date().toISOString(),
+              note: proofNote.trim() || null,
+              analysis: null,
+            }}
+            summary="Preview the uploaded image here before you submit it into the workflow."
           />
         ) : null}
 
-        {submittedProof ? <ProofEvidenceCard proof={submittedProof} summary={submittedProof.analysis?.summary ?? null} /> : null}
         {uploadResult ? (
           <div className="surface-card p-4 text-sm text-ink/64">
             Uploaded proof expires at {uploadResult.expiresAt}. The direct proof asset link remains available from the evidence card.

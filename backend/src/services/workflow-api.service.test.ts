@@ -31,6 +31,7 @@ function createFundingTokenStub() {
       adminAddress: Keypair.random().publicKey(),
       assetCode: "PUSD",
       assetIssuer: Keypair.random().publicKey(),
+      fundingAssetType: "stellar_asset" as const,
       isStellarAssetContract: true,
       trustlineRequired: true,
     }),
@@ -378,4 +379,85 @@ test("requestBuyerFundingTopUp returns a testnet mint result without changing fu
   const storedOrder = await foundationRepository.getWorkflowOrder(orderId);
   assert.equal(storedOrder?.workflowStatus, "awaiting_funding");
   assert.equal(storedOrder?.fundingStatus, "not_started");
+});
+
+test("native XLM funding intent disables token top-up and rejects mint requests", async () => {
+  env.TOKEN_ADMIN_SECRET = Keypair.random().secret();
+  await clearContractRegistry();
+  const contractId = `escrow-${randomUUID()}`;
+  await seedContractRegistry({
+    environment: "staging",
+    escrowContractId: contractId,
+    tokenContractId: `native-${randomUUID()}`,
+    oraclePublicKey: `oracle-${randomUUID()}`,
+    rpcUrl: "https://staging-rpc.example",
+    networkPassphrase: "Test SDF Network ; September 2015",
+  });
+
+  const orderId = `workflow-order-${randomUUID()}`;
+  const buyerWallet = Keypair.random().publicKey();
+  await foundationRepository.createWorkflowOrder({
+    id: orderId,
+    publicOrderCode: "PV-FUND-XLM",
+    workflowStatus: "awaiting_funding",
+    contractId,
+    onChainOrderId: "404",
+    sellerWallet: Keypair.random().publicKey(),
+    buyerWallet,
+    riderWallet: null,
+    sellerActorId: "seller-actor",
+    buyerActorId: buyerActor.actorId,
+    riderActorId: null,
+    itemAmount: "3.00",
+    deliveryFee: "1.00",
+    totalAmount: "4.00",
+    itemDescription: "Parcel",
+    pickupLabel: "Pickup",
+    dropoffLabel: "Dropoff",
+    fundingDeadlineAt: "2026-04-10T00:00:00.000Z",
+    lastEventType: "buyer_claimed",
+    lastEventAt: "2026-04-01T00:00:00.000Z",
+  });
+
+  const service = new WorkflowApiService(
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    {
+      inspectToken: async () => ({
+        contractId: "native-token-contract",
+        symbol: "XLM",
+        name: "native",
+        decimals: 7,
+        adminAddress: null,
+        assetCode: "XLM",
+        assetIssuer: null,
+        fundingAssetType: "native" as const,
+        isStellarAssetContract: true,
+        trustlineRequired: false,
+      }),
+      mintBuyerTopUp: async () => {
+        throw new Error("Native XLM should not be minted");
+      },
+    } as never,
+  );
+
+  const intent = await service.createBuyerFundingIntent(buyerActor, orderId);
+
+  assert.equal(intent.token.symbol, "XLM");
+  assert.equal(intent.token.fundingAssetType, "native");
+  assert.equal(intent.setup.demoTopUpAvailable, false);
+  assert.equal(intent.setup.topUpUnavailableReason, "native_xlm_uses_friendbot");
+  assert.ok(intent.setup.xlmFriendbotUrl?.includes(buyerWallet));
+
+  await assert.rejects(
+    () => service.requestBuyerFundingTopUp(buyerActor, orderId),
+    /Native XLM is funded through Friendbot/,
+  );
 });

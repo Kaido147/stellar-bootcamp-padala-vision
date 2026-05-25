@@ -14,12 +14,14 @@ export function WorkflowOrderDetailContent({
   detailSubtitle,
   actions,
   proofSummary,
+  showProofEvidence = true,
 }: {
   detail: OrderDetailEnvelope;
   detailTitle: string;
   detailSubtitle: string;
   actions?: ReactNode;
   proofSummary?: string | null;
+  showProofEvidence?: boolean;
 }) {
   const { order } = detail;
 
@@ -81,7 +83,7 @@ export function WorkflowOrderDetailContent({
         {actions}
       </Card>
 
-      <ProofEvidenceCard proof={detail.latestProof ?? null} summary={proofSummary} />
+      {showProofEvidence ? <ProofEvidenceCard proof={detail.latestProof ?? null} summary={proofSummary} /> : null}
 
       <WorkflowTimelineCard timeline={detail.timeline} />
     </div>

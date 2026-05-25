@@ -163,6 +163,7 @@ describe("buyer workflow pages", () => {
         adminAddress: "GISSUER",
         assetCode: "PUSD",
         assetIssuer: "GISSUER",
+        fundingAssetType: "stellar_asset",
         isStellarAssetContract: true,
         trustlineRequired: true,
       },
@@ -207,6 +208,123 @@ describe("buyer workflow pages", () => {
       expect.objectContaining({
         actionIntentId: "intent-1",
         txHash: "fund-hash-1",
+        submittedWallet: "GBUYER",
+      }),
+    );
+  });
+
+  it("allows native XLM funding when the buyer has order amount plus reserve", async () => {
+    vi.mocked(loadHorizonAccount).mockResolvedValue({
+      balances: [{ asset_type: "native", balance: "10.0000000" }],
+    } as never);
+    vi.mocked(workflowApi.getBuyerWorkflowOrder).mockResolvedValue({
+      order: {
+        orderId: "order-xlm",
+        orderCode: "PV-XLM",
+        status: "awaiting_funding",
+        itemDescription: "Parcel",
+        pickupLabel: "Pickup",
+        dropoffLabel: "Dropoff",
+        itemAmount: "3.00",
+        deliveryFee: "1.00",
+        totalAmount: "4.00",
+        seller: { id: "seller-1", role: "seller", status: "active", displayName: "Seller" },
+        buyer: { id: "buyer-1", role: "buyer", status: "active", displayName: "Buyer" },
+        rider: null,
+        createdAt: "2026-03-31T00:00:00.000Z",
+        updatedAt: "2026-03-31T00:00:00.000Z",
+        fundingDeadlineAt: "2026-04-01T00:00:00.000Z",
+        buyerConfirmationDueAt: null,
+        lastEventType: "buyer_claimed",
+        lastEventAt: "2026-03-31T00:00:00.000Z",
+        relation: "buyer_owner",
+        chain: {
+          contractId: "contract-xlm",
+          onChainOrderId: "88",
+          sellerWallet: "GSELLER",
+          buyerWallet: "GBUYER",
+          riderWallet: null,
+          fundingStatus: "not_started",
+          fundingTxHash: null,
+          orderCreatedTxHash: "create-hash-xlm",
+          lastChainReconciliationStatus: null,
+          lastChainReconciledAt: null,
+          lastChainError: null,
+        },
+      },
+      timeline: [],
+      availableActions: [],
+      confirmationTokenActive: false,
+    });
+    vi.mocked(workflowApi.createBuyerFundingIntent).mockResolvedValue({
+      orderId: "order-xlm",
+      actionIntentId: "intent-xlm",
+      actionType: "fund",
+      method: "fund_order",
+      contractId: "contract-xlm",
+      tokenContractId: "native-token",
+      tokenDecimals: 7,
+      onChainOrderId: "88",
+      buyerWallet: "GBUYER",
+      fundingStatus: "not_started",
+      existingFundingTxHash: null,
+      rpcUrl: "https://rpc.example",
+      networkPassphrase: "Test Network",
+      token: {
+        contractId: "native-token",
+        symbol: "XLM",
+        name: "native",
+        decimals: 7,
+        adminAddress: null,
+        assetCode: "XLM",
+        assetIssuer: null,
+        fundingAssetType: "native",
+        isStellarAssetContract: true,
+        trustlineRequired: false,
+      },
+      setup: {
+        demoTopUpAvailable: false,
+        xlmFriendbotUrl: "https://friendbot.stellar.org/?addr=GBUYER",
+        topUpUnavailableReason: "native_xlm_uses_friendbot",
+      },
+      args: {},
+      replayKey: "replay-xlm",
+    });
+    vi.mocked(workflowApi.confirmBuyerFunding).mockResolvedValue({
+      orderId: "order-xlm",
+      status: "funded",
+      txHash: "fund-hash-xlm",
+      chainStatus: "confirmed",
+    });
+    vi.mocked(prepareContractInvocation).mockResolvedValue({
+      toXDR: () => "PREPARED_XLM_XDR",
+    } as never);
+    vi.mocked(submitPreparedTransaction).mockResolvedValue({
+      server: { getTransaction: vi.fn() },
+      txHash: "fund-hash-xlm",
+      sendStatus: "PENDING",
+    } as never);
+    vi.mocked(waitForTransactionFinality).mockResolvedValue({ status: "SUCCESS" } as never);
+
+    render(
+      <MemoryRouter initialEntries={["/buyer/orders/order-xlm/fund"]}>
+        <Routes>
+          <Route path="/buyer/orders/:id/fund" element={<BuyerFundPage />} />
+          <Route path="/buyer/orders/:id" element={<div>buyer order detail</div>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText(/No trustline or token minter is required/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Request testnet XLM/i })).not.toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: /Fund with XLM/i }));
+
+    expect(await screen.findByText("buyer order detail")).toBeInTheDocument();
+    expect(workflowApi.confirmBuyerFunding).toHaveBeenCalledWith(
+      "order-xlm",
+      expect.objectContaining({
+        actionIntentId: "intent-xlm",
+        txHash: "fund-hash-xlm",
         submittedWallet: "GBUYER",
       }),
     );

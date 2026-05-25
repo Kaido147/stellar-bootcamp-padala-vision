@@ -501,11 +501,20 @@ export class WorkflowApiService {
       existingFundingTxHash: order.fundingTxHash,
       token,
       setup: {
-        demoTopUpAvailable: Boolean(env.TOKEN_ADMIN_SECRET) && contractSet.networkPassphrase === Networks.TESTNET,
+        demoTopUpAvailable:
+          token.fundingAssetType !== "native" &&
+          Boolean(env.TOKEN_ADMIN_SECRET) &&
+          contractSet.networkPassphrase === Networks.TESTNET,
         xlmFriendbotUrl:
           contractSet.networkPassphrase === Networks.TESTNET
             ? `https://friendbot.stellar.org/?addr=${order.buyerWallet}`
             : null,
+        topUpUnavailableReason:
+          token.fundingAssetType === "native"
+            ? "native_xlm_uses_friendbot"
+            : env.TOKEN_ADMIN_SECRET
+              ? null
+              : "not_configured",
       },
       args: {
         order_id: order.onChainOrderId,
@@ -524,10 +533,6 @@ export class WorkflowApiService {
     if (order.workflowStatus !== "awaiting_funding" && order.workflowStatus !== "funding_failed") {
       throw new HttpError(409, "Test token top-up is only available before funding succeeds", "workflow_top_up_state_invalid");
     }
-    if (!env.TOKEN_ADMIN_SECRET) {
-      throw new HttpError(503, "Test token top-up is not configured on this backend", "workflow_token_top_up_unavailable");
-    }
-
     const contractSet = await this.contracts.resolveActiveContractSet();
     const token = await this.fundingTokens.inspectToken({
       contractId: contractSet.tokenContractId,
@@ -535,6 +540,17 @@ export class WorkflowApiService {
       networkPassphrase: contractSet.networkPassphrase,
       sourceAddress: order.buyerWallet,
     });
+    if (token.fundingAssetType === "native") {
+      throw new HttpError(
+        409,
+        "Native XLM is funded through Friendbot on testnet; token top-up minting is not required.",
+        "workflow_native_xlm_uses_friendbot",
+      );
+    }
+    if (!env.TOKEN_ADMIN_SECRET) {
+      throw new HttpError(503, "Test token top-up is not configured on this backend", "workflow_token_top_up_unavailable");
+    }
+
     const amountNeededBaseUnits = parseTokenAmountToBaseUnits(order.totalAmount, token.decimals);
     const minted = await this.fundingTokens.mintBuyerTopUp({
       rpcUrl: contractSet.rpcUrl,
