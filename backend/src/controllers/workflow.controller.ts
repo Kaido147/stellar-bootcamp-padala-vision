@@ -44,7 +44,7 @@ function getDisputeIdParam(req: Request) {
 function setActorSessionCookie(res: Response, token: string) {
   res.cookie(env.ACTOR_SESSION_COOKIE_NAME, token, {
     httpOnly: true,
-    sameSite: "lax",
+    sameSite: env.NODE_ENV === "production" ? "none" : "lax",
     secure: env.NODE_ENV === "production",
     path: "/",
   });
@@ -53,7 +53,7 @@ function setActorSessionCookie(res: Response, token: string) {
 function clearActorSessionCookie(res: Response) {
   res.clearCookie(env.ACTOR_SESSION_COOKIE_NAME, {
     httpOnly: true,
-    sameSite: "lax",
+    sameSite: env.NODE_ENV === "production" ? "none" : "lax",
     secure: env.NODE_ENV === "production",
     path: "/",
   });
